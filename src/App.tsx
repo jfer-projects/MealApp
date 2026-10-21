@@ -44,10 +44,18 @@ const STORAGE_KEYS = {
   isDairyFree: 'freshdiy_is_dairy_free_v1',
   defaultServings: 'freshdiy_default_servings_v1',
   valleriaPhone: 'freshdiy_valleria_phone_v1',
+  fridgeItems: 'freshdiy_fridge_items_v1',
 };
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog');
+
+  const [onHandFridgeItems, setOnHandFridgeItems] = useState<string[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.fridgeItems);
+    return saved
+      ? JSON.parse(saved)
+      : ['Chicken Breast', 'Potatoes', 'Broccoli', 'Dairy-Free Sour Cream'];
+  });
 
   // Core Spec Defaults: 4 Servings & Dairy-Free Mode = TRUE
   const [defaultServings, setDefaultServings] = useState<ServingsSize>(() => {
@@ -636,9 +644,33 @@ export const App: React.FC = () => {
         {activeTab === 'catalog' && (
           <CatalogPlannerView
             recipes={recipes}
+            cabinet={cabinet}
             weeklyPlan={weeklyPlan}
             defaultServings={defaultServings}
             isDairyFree={isDairyFree}
+            onHandFridgeItems={onHandFridgeItems}
+            onToggleFridgeItem={(item) => {
+              setOnHandFridgeItems((prev) => {
+                const exists = prev.some(
+                  (i) => i.toLowerCase() === item.toLowerCase()
+                );
+                const next = exists
+                  ? prev.filter((i) => i.toLowerCase() !== item.toLowerCase())
+                  : [...prev, item];
+                localStorage.setItem(
+                  STORAGE_KEYS.fridgeItems,
+                  JSON.stringify(next)
+                );
+                return next;
+              });
+            }}
+            onClearFridgeItems={() => {
+              setOnHandFridgeItems([]);
+              localStorage.setItem(
+                STORAGE_KEYS.fridgeItems,
+                JSON.stringify([])
+              );
+            }}
             onSetDefaultServings={(s) => {
               setDefaultServings(s);
               setWeeklyPlan((prev) => prev.map((p) => ({ ...p, servings: s })));

@@ -5,14 +5,17 @@ import {
   Clock,
   Flame,
   Plus,
+  Refrigerator,
   Search,
   Sparkles,
   Trash2,
   Users,
   Utensils,
   Wind,
+  X,
 } from 'lucide-react';
 import {
+  CabinetItem,
   DAYS_OF_WEEK,
   DayOfWeek,
   Recipe,
@@ -20,12 +23,21 @@ import {
   WeeklyPlanItem,
 } from '../types/freshdiy';
 import { formatAmount, transformIngredient } from '../utils/dairyEngine';
+import {
+  COMMON_FRIDGE_STAPLES,
+  evaluateRecipeMatch,
+  rankRecipesByOnHandIngredients,
+} from '../utils/pantryMatcher';
 
 interface CatalogPlannerViewProps {
   recipes: Recipe[];
+  cabinet: CabinetItem[];
   weeklyPlan: WeeklyPlanItem[];
   defaultServings: ServingsSize;
   isDairyFree: boolean;
+  onHandFridgeItems: string[];
+  onToggleFridgeItem: (item: string) => void;
+  onClearFridgeItems: () => void;
   onSetDefaultServings: (s: ServingsSize) => void;
   onAddToPlan: (recipeId: string, day: DayOfWeek, servings: ServingsSize) => void;
   onUpdatePlanServings: (planId: string, servings: ServingsSize) => void;
@@ -36,6 +48,7 @@ interface CatalogPlannerViewProps {
 
 const FILTER_TAGS = [
   'All',
+  'Best Ingredient Match',
   'Kid-Friendly',
   'Under 30 Mins',
   'Sheet Pan',
@@ -45,9 +58,13 @@ const FILTER_TAGS = [
 
 export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
   recipes,
+  cabinet,
   weeklyPlan,
   defaultServings,
   isDairyFree,
+  onHandFridgeItems,
+  onToggleFridgeItem,
+  onClearFridgeItems,
   onSetDefaultServings,
   onAddToPlan,
   onUpdatePlanServings,
@@ -59,12 +76,47 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
   const [activeTag, setActiveTag] = useState('All');
   const [selectedDayForAdd, setSelectedDayForAdd] = useState<DayOfWeek>('Monday');
   const [showAllVersions, setShowAllVersions] = useState(false);
+  const [customFridgeInput, setCustomFridgeInput] = useState('');
+  const [showMatcherPanel, setShowMatcherPanel] = useState(true);
+
+  // Compute match scores for all recipes
+  const matchMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof evaluateRecipeMatch>>();
+    for (const r of recipes) {
+      map.set(
+        r.id,
+        evaluateRecipeMatch(
+          r,
+          onHandFridgeItems,
+          cabinet,
+          defaultServings,
+          isDairyFree
+        )
+      );
+    }
+    return map;
+  }, [recipes, onHandFridgeItems, cabinet, defaultServings, isDairyFree]);
+
+  // Top suggested recipes based on Fridge + Cabinet
+  const topSuggestions = useMemo(() => {
+    return rankRecipesByOnHandIngredients(
+      recipes,
+      onHandFridgeItems,
+      cabinet,
+      defaultServings,
+      isDairyFree
+    ).slice(0, 3);
+  }, [recipes, onHandFridgeItems, cabinet, defaultServings, isDairyFree]);
 
   const visibleRecipes = useMemo(() => {
-    return recipes
+    const filtered = recipes
       .filter((r) => (showAllVersions ? true : r.is_latest))
       .filter((r) => {
-        if (activeTag !== 'All' && !r.tags.includes(activeTag)) {
+        if (
+          activeTag !== 'All' &&
+          activeTag !== 'Best Ingredient Match' &&
+          !r.tags.includes(activeTag)
+        ) {
           return false;
         }
         if (searchQuery.trim() !== '') {
@@ -78,10 +130,40 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
         }
         return true;
       });
-  }, [recipes, activeTag, searchQuery, showAllVersions]);
+
+    if (activeTag === 'Best Ingredient Match' || onHandFridgeItems.length > 0) {
+      return [...filtered].sort((a, b) => {
+        const ma = matchMap.get(a.id);
+        const mb = matchMap.get(b.id);
+        if (!ma || !mb) return 0;
+        const scoreA = ma.fridgeHitCount * 25 + ma.matchPercentage;
+        const scoreB = mb.fridgeHitCount * 25 + mb.matchPercentage;
+        return scoreB - scoreA;
+      });
+    }
+
+    return filtered;
+  }, [
+    recipes,
+    activeTag,
+    searchQuery,
+    showAllVersions,
+    onHandFridgeItems,
+    matchMap,
+  ]);
+
+  const handleAddCustomFridge = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customFridgeInput.trim()) return;
+    onToggleFridgeItem(customFridgeInput.trim());
+    setCustomFridgeInput('');
+  };
 
   const plannedCount = weeklyPlan.length;
   const completedCount = weeklyPlan.filter((p) => p.status === 'completed').length;
+  const inStockCabinetCount = cabinet.filter(
+    (c) => c.status !== 'out_of_stock'
+  ).length;
 
   return (
     <div className="space-y-8">
@@ -117,7 +199,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                 <button
                   key={size}
                   onClick={() => onSetDefaultServings(size)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
                     defaultServings === size
                       ? 'bg-emerald-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
@@ -246,6 +328,193 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
         </div>
       </section>
 
+      {/* NEW: Smart Recipe Suggestor ("Cook With What We Already Have") */}
+      <section className="bg-gradient-to-br from-emerald-900 via-slate-900 to-teal-950 text-white rounded-2xl p-6 shadow-md space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 shrink-0">
+              <Refrigerator className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-extrabold tracking-tight">
+                  Cook With What We Have — Smart Recipe Suggestor
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                  {onHandFridgeItems.length} Fridge Items + {inStockCabinetCount} Cabinet Spices Active
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Select proteins, veggies, or grains currently in your fridge/freezer. We combine them with your live <strong>Spice Cabinet</strong> (and DIY HelloFresh blends) to rank recipes you can cook right now!
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {onHandFridgeItems.length > 0 && (
+              <button
+                onClick={onClearFridgeItems}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-slate-200 transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" /> Clear Fridge ({onHandFridgeItems.length})
+              </button>
+            )}
+            <button
+              onClick={() => setShowMatcherPanel(!showMatcherPanel)}
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold transition cursor-pointer"
+            >
+              {showMatcherPanel ? 'Hide Fridge Selector' : 'Select Fridge Ingredients'}
+            </button>
+          </div>
+        </div>
+
+        {showMatcherPanel && (
+          <div className="space-y-5 pt-2 border-t border-white/10">
+            {/* Fridge Ingredient Selector Chips + Custom Input */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+              {COMMON_FRIDGE_STAPLES.map((group) => (
+                <div
+                  key={group.category}
+                  className="bg-white/5 rounded-xl p-3.5 border border-white/10 space-y-2"
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">
+                    {group.category}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.items.map((item) => {
+                      const active = onHandFridgeItems.some(
+                        (i) => i.toLowerCase() === item.toLowerCase()
+                      );
+                      return (
+                        <button
+                          key={item}
+                          onClick={() => onToggleFridgeItem(item)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                            active
+                              ? 'bg-emerald-400 text-slate-950 font-bold shadow-xs'
+                              : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                          }`}
+                        >
+                          {active ? '✓ ' : '+ '}
+                          {item}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Custom Ingredient Input Bar */}
+            <form
+              onSubmit={handleAddCustomFridge}
+              className="flex flex-wrap items-center gap-2"
+            >
+              <input
+                type="text"
+                value={customFridgeInput}
+                onChange={(e) => setCustomFridgeInput(e.target.value)}
+                placeholder="Have something else on hand? (e.g., Poblano, Shrimp, Couscous...)"
+                className="px-3.5 py-2 rounded-xl bg-white/10 border border-white/20 text-xs text-white placeholder:text-slate-400 w-72 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+              <button
+                type="submit"
+                className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-bold text-white transition cursor-pointer"
+              >
+                + Add Custom On-Hand Item
+              </button>
+            </form>
+
+            {/* Top 3 Suggested Recipes Based on Current Inventory */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4" /> Top Suggested Recipes Based on Your Inventory
+                </h3>
+                <span className="text-[11px] text-slate-300">
+                  Ranked by Fridge Matches + In-Stock Cabinet Spices
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {topSuggestions.map((sug) => (
+                  <div
+                    key={sug.recipe.id}
+                    className="rounded-xl bg-white/10 border border-white/15 p-4 flex flex-col justify-between gap-3 backdrop-blur-xs"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-400 text-slate-950">
+                          {sug.matchPercentage}% Total Match
+                        </span>
+                        <span className="text-xs font-semibold text-slate-300">
+                          {sug.missingItems.length === 0
+                            ? '🎉 Ready to Cook Tonight!'
+                            : `Only need ${sug.missingItems.length} item${
+                                sug.missingItems.length === 1 ? '' : 's'
+                              }`}
+                        </span>
+                      </div>
+
+                      <h4 className="font-bold text-white text-sm leading-snug">
+                        {sug.recipe.title}
+                      </h4>
+                      <p className="text-[11px] text-slate-300 line-clamp-1">
+                        {sug.recipe.subtitle}
+                      </p>
+
+                      {sug.matchedFridgeItems.length > 0 && (
+                        <div className="text-[11px] text-emerald-300">
+                          <strong>Uses from Fridge:</strong>{' '}
+                          {sug.matchedFridgeItems.join(', ')}
+                        </div>
+                      )}
+
+                      {sug.matchedCabinetItems.length > 0 && (
+                        <div className="text-[11px] text-amber-300">
+                          <strong>In Your Cabinet:</strong>{' '}
+                          {sug.matchedCabinetItems.join(', ')}
+                        </div>
+                      )}
+
+                      {sug.missingItems.length > 0 && (
+                        <div className="text-[11px] text-rose-300">
+                          <strong>Missing to Buy:</strong>{' '}
+                          {sug.missingItems.map((m) => m.name).join(', ')}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
+                      <button
+                        onClick={() =>
+                          onOpenCookingView(sug.recipe, defaultServings)
+                        }
+                        className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition cursor-pointer"
+                      >
+                        Open Cooking Cards
+                      </button>
+                      <button
+                        onClick={() =>
+                          onAddToPlan(
+                            sug.recipe.id,
+                            selectedDayForAdd,
+                            defaultServings
+                          )
+                        }
+                        className="px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-xs font-extrabold transition cursor-pointer"
+                      >
+                        + Plan for {selectedDayForAdd.slice(0, 3)}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* Recipe Vault Search & Instant Filter Bar */}
       <section className="space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -273,6 +542,9 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                       : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
+                  {tag === 'Best Ingredient Match' && (
+                    <Refrigerator className="w-3.5 h-3.5" />
+                  )}
                   {tag === 'Air Fryer' && <Wind className="w-3.5 h-3.5" />}
                   {tag === 'Rice Cooker' && <Flame className="w-3.5 h-3.5" />}
                   {tag}
@@ -295,6 +567,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
         {/* Recipe Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {visibleRecipes.map((recipe) => {
+            const matchInfo = matchMap.get(recipe.id);
             const previewIngredients = recipe.ingredients_json
               .slice(0, 5)
               .map((ing) =>
@@ -346,6 +619,11 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                           🌱 DF Adapted
                         </span>
                       )}
+                      {matchInfo && matchInfo.matchPercentage > 0 && (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-600 text-white shadow-xs">
+                          {matchInfo.matchPercentage}% Have On Hand
+                        </span>
+                      )}
                     </div>
                     <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/95 text-slate-800 shadow-xs flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-emerald-600" />
@@ -383,6 +661,23 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                         <strong>AI Adaptation:</strong> {recipe.version_notes}
                       </div>
                     )}
+
+                    {/* Match Summary Pill */}
+                    {matchInfo &&
+                      (matchInfo.matchedFridgeItems.length > 0 ||
+                        matchInfo.matchedCabinetItems.length > 0) && (
+                        <div className="mt-2.5 p-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-[11px] text-emerald-950">
+                          <span className="font-bold text-emerald-800">
+                            ✓ Have {matchInfo.matchedFridgeItems.length + matchInfo.matchedCabinetItems.length}/{matchInfo.totalIngredients} ingredients
+                          </span>
+                          {matchInfo.missingItems.length > 0 && (
+                            <span className="text-slate-600">
+                              {' '}
+                              • Need {matchInfo.missingItems.length} more
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                     {/* Scaled Ingredients Preview */}
                     <div className="mt-3 pt-3 border-t border-slate-100">
@@ -432,7 +727,6 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                   <button
                     onClick={() => {
                       onAddToPlan(recipe.id, selectedDayForAdd, defaultServings);
-                      // Advance target day automatically for fast weekly planning
                       const nextIdx =
                         (DAYS_OF_WEEK.indexOf(selectedDayForAdd) + 1) %
                         DAYS_OF_WEEK.length;
