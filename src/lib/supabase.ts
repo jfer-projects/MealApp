@@ -55,6 +55,8 @@ export async function syncAllToSupabase(payload: {
   weeklyPlan: WeeklyPlanItem[];
   feedback: RecipeFeedback[];
   extras: GroceryExtra[];
+  householdId?: string | null;
+  userId?: string | null;
 }): Promise<{ ok: boolean; message: string }> {
   const status = await checkSupabaseTablesReady();
   if (!status.tablesReady) {
@@ -83,6 +85,8 @@ export async function syncAllToSupabase(payload: {
         category: c.category,
         status: c.status,
         usage_count: c.usage_count,
+        ...(payload.householdId ? { household_id: payload.householdId } : {}),
+        ...(payload.userId ? { user_id: payload.userId } : {}),
       }));
       await supabase.from('cabinet').upsert(cabRows, { onConflict: 'item_name' });
     }

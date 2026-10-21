@@ -684,6 +684,8 @@ export const App: React.FC = () => {
       weeklyPlan,
       feedback: feedbackList,
       extras,
+      householdId: currentUser?.household?.id || null,
+      userId: currentUser?.id || null,
     });
     const status = await checkSupabaseTablesReady();
     setSupaStatus(status);
@@ -1001,12 +1003,15 @@ export const App: React.FC = () => {
               };
               setExtras((prev) => [...prev, newEx]);
               if (supaStatus.tablesReady) {
-                await supabase.from('grocery_extras').insert({
+                const payload: any = {
                   week_start_date: activeWeekStartDate,
                   item_name: itemName,
                   aisle,
                   checked: false,
-                });
+                };
+                if (currentUser?.household?.id) payload.household_id = currentUser.household.id;
+                if (currentUser?.id) payload.user_id = currentUser.id;
+                await supabase.from('grocery_extras').insert(payload);
               }
               showToast(`🛒 Added "${itemName}" to Valleria's Grocery List!`);
             }}
@@ -1045,12 +1050,15 @@ export const App: React.FC = () => {
               };
               setExtras((prev) => [...prev, newEx]);
               if (supaStatus.tablesReady) {
-                await supabase.from('grocery_extras').insert({
+                const payload: any = {
                   week_start_date: activeWeekStartDate,
                   item_name: itemName,
                   aisle,
                   checked: false,
-                });
+                };
+                if (currentUser?.household?.id) payload.household_id = currentUser.household.id;
+                if (currentUser?.id) payload.user_id = currentUser.id;
+                await supabase.from('grocery_extras').insert(payload);
               }
             }}
             onToggleExtra={async (id) => {
@@ -1202,12 +1210,15 @@ export const App: React.FC = () => {
           };
           setExtras((prev) => [...prev, newEx]);
           if (supaStatus.tablesReady) {
-            await supabase.from('grocery_extras').insert({
+            const payload: any = {
               week_start_date: activeWeekStartDate,
               item_name: itemName,
               aisle,
               checked: false,
-            });
+            };
+            if (currentUser?.household?.id) payload.household_id = currentUser.household.id;
+            if (currentUser?.id) payload.user_id = currentUser.id;
+            await supabase.from('grocery_extras').insert(payload);
           }
           showToast(`🛒 Added ${itemName} to your Grocery List!`);
         }}
