@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
+  Camera,
   ChefHat,
   Database,
   Leaf,
@@ -14,6 +15,7 @@ import { CabinetView } from './components/CabinetView';
 import { CatalogPlannerView } from './components/CatalogPlannerView';
 import { CookingView } from './components/CookingView';
 import { GroceryView } from './components/GroceryView';
+import { PhotoScannerModal } from './components/PhotoScannerModal';
 import {
   checkSupabaseTablesReady,
   supabase,
@@ -111,12 +113,16 @@ export const App: React.FC = () => {
         ];
   });
 
-  // Active recipe in Cooking View
+  // Active recipe in Cooking View & Modals
   const [cookingRecipeId, setCookingRecipeId] = useState<string | null>(null);
   const [cookingServings, setCookingServings] = useState<ServingsSize>(4);
   const [activeBlendModal, setActiveBlendModal] = useState<string | null>(null);
+  const [photoScannerState, setPhotoScannerState] = useState<{
+    open: boolean;
+    mode: 'cabinet' | 'fridge';
+  }>({ open: false, mode: 'cabinet' });
 
-  // Notification banner (e.g., Phase 4 Auto-Deduction results or Supabase sync)
+  // Notification banner
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Supabase Status
@@ -129,16 +135,14 @@ export const App: React.FC = () => {
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 6000);
+    setTimeout(() => setToastMessage(null), 5000);
   };
 
-  // Load 70 scraped HelloFresh recipes from public/data/hellofresh_recipes.json or localStorage / Supabase
   useEffect(() => {
     async function loadInitialData() {
       const status = await checkSupabaseTablesReady();
       setSupaStatus(status);
 
-      // 1. Check if Supabase has recipes & cabinet data already
       if (status.tablesReady) {
         const [
           { data: remoteRecipes },
@@ -147,11 +151,23 @@ export const App: React.FC = () => {
           { data: remoteFeedback },
           { data: remoteExtras },
         ] = await Promise.all([
-          supabase.from('recipes').select('*').order('version', { ascending: false }),
-          supabase.from('cabinet').select('*').order('item_name', { ascending: true }),
+          supabase
+            .from('recipes')
+            .select('*')
+            .order('version', { ascending: false }),
+          supabase
+            .from('cabinet')
+            .select('*')
+            .order('item_name', { ascending: true }),
           supabase.from('weekly_plan').select('*'),
-          supabase.from('recipe_feedback').select('*').order('created_at', { ascending: false }),
-          supabase.from('grocery_extras').select('*').order('created_at', { ascending: true }),
+          supabase
+            .from('recipe_feedback')
+            .select('*')
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('grocery_extras')
+            .select('*')
+            .order('created_at', { ascending: true }),
         ]);
 
         if (remoteCabinet && remoteCabinet.length > 0) {
@@ -176,7 +192,6 @@ export const App: React.FC = () => {
         }
       }
 
-      // 2. Check localStorage for any forked versions
       const cached = localStorage.getItem(STORAGE_KEYS.recipes);
       if (cached) {
         try {
@@ -190,14 +205,12 @@ export const App: React.FC = () => {
         }
       }
 
-      // 3. Load scraped HelloFresh dataset
       try {
         const res = await fetch('/data/hellofresh_recipes.json');
         const scraped: Recipe[] = await res.json();
         setRecipes(scraped);
         localStorage.setItem(STORAGE_KEYS.recipes, JSON.stringify(scraped));
 
-        // Seed 3 starter family meals if weeklyPlan is empty
         const existingPlan = localStorage.getItem(STORAGE_KEYS.plan);
         if (!existingPlan && scraped.length >= 3) {
           const starterPlan: WeeklyPlanItem[] = [
@@ -236,7 +249,6 @@ export const App: React.FC = () => {
     loadInitialData();
   }, []);
 
-  // Persist state locally
   useEffect(() => {
     if (recipes.length > 0) {
       localStorage.setItem(STORAGE_KEYS.recipes, JSON.stringify(recipes));
@@ -311,7 +323,6 @@ export const App: React.FC = () => {
     setWeeklyPlan((prev) => prev.filter((p) => p.id !== planId));
   };
 
-  // Phase 4: Complete Weekly Plan & Auto-Deduct Utilized Spices/Sauces from Cabinet
   const handleCompleteWeeklyPlan = async () => {
     const plannedMeals = weeklyPlan.filter((p) => p.status !== 'completed');
     const mealsToDeduct = plannedMeals.length > 0 ? plannedMeals : weeklyPlan;
@@ -381,20 +392,33 @@ export const App: React.FC = () => {
     status: StockStatus
   ) => {
     const newItem: CabinetItem = {
-      id: `cab-${Date.now()}`,
+      id: `cab-${Date.now()}-${Math.random()}`,
       item_name: name,
       category,
       status,
       usage_count: 0,
     };
-    setCabinet((prev) => [newItem, ...prev]);
+    setCabinet((prev) => {
+      const existingIdx = prev.findIndex(
+        (c) => c.item_name.toLowerCase() === name.toLowerCase()
+      );
+      if (existingIdx !== -1) {
+        return prev.map((c, i) =>
+          i === existingIdx ? { ...c, status: 'in_stock', usage_count: 0 } : c
+        );
+      }
+      return [newItem, ...prev];
+    });
     if (supaStatus.tablesReady) {
-      await supabase.from('cabinet').insert({
-        item_name: name,
-        category,
-        status,
-        usage_count: 0,
-      });
+      await supabase.from('cabinet').upsert(
+        {
+          item_name: name,
+          category,
+          status,
+          usage_count: 0,
+        },
+        { onConflict: 'item_name' }
+      );
     }
   };
 
@@ -411,7 +435,6 @@ export const App: React.FC = () => {
     showToast('✅ All Spice & Pantry Cabinet items restocked to In-Stock!');
   };
 
-  // Core Feature E: AI Recipe Versioning & Feedback Loop (v1 -> v2)
   const handleSubmitFeedbackAndFork = async (
     baseRecipe: Recipe,
     authorName: string,
@@ -435,7 +458,6 @@ export const App: React.FC = () => {
 
     const rootOriginalId = baseRecipe.original_id || baseRecipe.id;
 
-    // Flip old versions of this recipe to is_latest = false and append new version
     setRecipes((prev) => {
       const updated = prev.map((r) =>
         (r.original_id || r.id) === rootOriginalId
@@ -445,7 +467,6 @@ export const App: React.FC = () => {
       return [newRecipe, ...updated];
     });
 
-    // Update any weekly plan entry using the old recipe ID to point to the new v2 recipe
     setWeeklyPlan((prev) =>
       prev.map((p) =>
         p.recipe_id === baseRecipe.id ? { ...p, recipe_id: newRecipe.id } : p
@@ -510,38 +531,41 @@ export const App: React.FC = () => {
     return feedbackList.filter((f) => versionIds.has(f.recipe_id));
   }, [feedbackList, activeCookingRecipe, activeCookingRecipeVersions]);
 
+  const outOrLowCabinetCount = useMemo(
+    () => cabinet.filter((c) => c.status !== 'in_stock').length,
+    [cabinet]
+  );
+
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
-      {/* Top Global Header */}
+    <div className="min-h-screen flex flex-col bg-slate-50 pb-20 md:pb-0">
+      {/* Top Global Header (Compact on Mobile, Full on Desktop) */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2">
           {/* Brand Logo */}
-          <div className="flex items-center justify-between">
-            <div
-              onClick={() => setActiveTab('catalog')}
-              className="flex items-center gap-3 cursor-pointer"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                <ChefHat className="w-6 h-6" />
+          <div
+            onClick={() => setActiveTab('catalog')}
+            className="flex items-center gap-2.5 cursor-pointer"
+          >
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+              <ChefHat className="w-5 h-5 sm:w-6 sm:h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
+                  Fresh<span className="text-emerald-600">DIY</span>
+                </span>
+                <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-800">
+                  Family of 4 • Valleria &amp; You
+                </span>
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xl font-black tracking-tight text-slate-900">
-                    Fresh<span className="text-emerald-600">DIY</span>
-                  </span>
-                  <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-800">
-                    Family of 4 • Valleria &amp; You
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500">
-                  HelloFresh Replicator • Dairy-Free Substitution Engine • AI Recipe Versioning
-                </p>
-              </div>
+              <p className="text-[10px] sm:text-xs text-slate-500 line-clamp-1">
+                526 HelloFresh Recipes • Dairy-Free • AI Kitchen
+              </p>
             </div>
           </div>
 
-          {/* Primary Navigation Tabs */}
-          <nav className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+          {/* Desktop Primary Navigation Tabs */}
+          <nav className="hidden md:flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
             <button
               onClick={() => setActiveTab('catalog')}
               className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
@@ -551,7 +575,7 @@ export const App: React.FC = () => {
               }`}
             >
               <BookOpen className="w-4 h-4" />
-              Catalog &amp; Planner ({recipes.filter((r) => r.is_latest).length})
+              Planner ({recipes.filter((r) => r.is_latest).length})
             </button>
 
             <button
@@ -563,7 +587,12 @@ export const App: React.FC = () => {
               }`}
             >
               <Package className="w-4 h-4" />
-              Spice Cabinet &amp; Decoder
+              Spice Cabinet
+              {outOrLowCabinetCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-rose-600 text-white">
+                  {outOrLowCabinetCount}
+                </span>
+              )}
             </button>
 
             <button
@@ -575,7 +604,7 @@ export const App: React.FC = () => {
               }`}
             >
               <ShoppingCart className="w-4 h-4" />
-              Smart Grocery ({weeklyPlan.length} Meals)
+              Smart Grocery ({weeklyPlan.length})
             </button>
 
             <button
@@ -587,41 +616,54 @@ export const App: React.FC = () => {
               }`}
             >
               <Sparkles className="w-4 h-4" />
-              Cooking &amp; AI Versioning
+              Cook &amp; AI Fork
             </button>
           </nav>
 
-          {/* Global Dairy-Free Toggle + Supabase Cloud Sync Button */}
-          <div className="flex items-center gap-2.5">
+          {/* Right Quick Actions (Mobile + Desktop) */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              onClick={() =>
+                setPhotoScannerState({
+                  open: true,
+                  mode: activeTab === 'cabinet' ? 'cabinet' : 'fridge',
+                })
+              }
+              className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
+              title="Take a photo of your spice cabinet or fridge to auto-import"
+            >
+              <Camera className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Scan</span>
+            </button>
+
             <button
               onClick={() => setIsDairyFree(!isDairyFree)}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              className={`inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
                 isDairyFree
                   ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                  : 'bg-white text-slate-700 border-slate-200'
               }`}
-              title="Toggles Dynamic Dairy Substitution Engine across all ingredients, cooking steps, and grocery aisles"
+              title="Toggles Dynamic Dairy Substitution Engine"
             >
-              <Leaf className="w-4 h-4" />
-              Dairy-Free: {isDairyFree ? 'ON' : 'OFF'}
+              <Leaf className="w-3.5 h-3.5" />
+              <span>DF: {isDairyFree ? 'ON' : 'OFF'}</span>
             </button>
 
             <button
               onClick={handleSyncSupabase}
               disabled={isSyncing}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
                 supaStatus.tablesReady
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
-                  : 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-amber-50 border-amber-200 text-amber-900'
               }`}
-              title="Sync recipes, versions, and cabinet inventory with Supabase"
             >
               {isSyncing ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <Database className="w-3.5 h-3.5" />
               )}
-              {supaStatus.tablesReady ? 'Supabase Live' : 'Sync Supabase'}
+              {supaStatus.tablesReady ? 'Cloud Live' : 'Sync'}
             </button>
           </div>
         </div>
@@ -629,8 +671,8 @@ export const App: React.FC = () => {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 w-full">
-          <div className="p-4 rounded-2xl bg-slate-900 text-white text-xs font-bold flex items-center justify-between shadow-lg">
+        <div className="max-w-7xl mx-auto px-3.5 sm:px-6 pt-3 w-full">
+          <div className="p-3.5 rounded-2xl bg-slate-900 text-white text-xs font-bold flex items-center justify-between shadow-lg">
             <span>{toastMessage}</span>
             <button
               onClick={() => setToastMessage(null)}
@@ -643,7 +685,7 @@ export const App: React.FC = () => {
       )}
 
       {/* Main Content Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-6">
         {activeTab === 'catalog' && (
           <CatalogPlannerView
             recipes={recipes}
@@ -688,6 +730,9 @@ export const App: React.FC = () => {
               setActiveTab('cooking');
             }}
             onOpenBlendModal={(blendName) => setActiveBlendModal(blendName)}
+            onOpenPhotoScanner={(mode) =>
+              setPhotoScannerState({ open: true, mode })
+            }
           />
         )}
 
@@ -697,6 +742,28 @@ export const App: React.FC = () => {
             onUpdateStatus={handleUpdateCabinetStatus}
             onAddCabinetItem={handleAddCabinetItem}
             onRestockAllLowAndOut={handleRestockAllLowAndOut}
+            onAddExtraToGrocery={async (itemName, aisle) => {
+              const newEx: GroceryExtra = {
+                id: `extra-${Date.now()}-${Math.random()}`,
+                week_start_date: '2026-10-19',
+                item_name: itemName,
+                aisle,
+                checked: false,
+              };
+              setExtras((prev) => [...prev, newEx]);
+              if (supaStatus.tablesReady) {
+                await supabase.from('grocery_extras').insert({
+                  item_name: itemName,
+                  aisle,
+                  checked: false,
+                });
+              }
+              showToast(`🛒 Added "${itemName}" to Valleria's Grocery List!`);
+            }}
+            onOpenPhotoScanner={() =>
+              setPhotoScannerState({ open: true, mode: 'cabinet' })
+            }
+            onOpenBlendModal={(blendName) => setActiveBlendModal(blendName)}
           />
         )}
 
@@ -769,6 +836,84 @@ export const App: React.FC = () => {
         )}
       </main>
 
+      {/* NATIVE-STYLE MOBILE BOTTOM NAVIGATION BAR */}
+      <nav className="fixed bottom-0 inset-x-0 z-40 md:hidden bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-1.5 grid grid-cols-5 items-center shadow-2xl">
+        <button
+          onClick={() => setActiveTab('catalog')}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            activeTab === 'catalog'
+              ? 'text-emerald-600 font-black'
+              : 'text-slate-500 font-semibold'
+          }`}
+        >
+          <BookOpen className="w-5 h-5" />
+          <span className="text-[10px] mt-0.5">Planner</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('cabinet')}
+          className={`relative flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            activeTab === 'cabinet'
+              ? 'text-emerald-600 font-black'
+              : 'text-slate-500 font-semibold'
+          }`}
+        >
+          <Package className="w-5 h-5" />
+          <span className="text-[10px] mt-0.5">Cabinet</span>
+          {outOrLowCabinetCount > 0 && (
+            <span className="absolute top-0.5 right-3 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-black flex items-center justify-center">
+              {outOrLowCabinetCount}
+            </span>
+          )}
+        </button>
+
+        {/* Center Camera Scan Floating Action Button */}
+        <div className="flex items-center justify-center">
+          <button
+            onClick={() =>
+              setPhotoScannerState({
+                open: true,
+                mode: activeTab === 'cabinet' ? 'cabinet' : 'fridge',
+              })
+            }
+            className="w-12 h-12 -mt-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg flex flex-col items-center justify-center cursor-pointer active:scale-95"
+          >
+            <Camera className="w-5 h-5" />
+            <span className="text-[8px] font-black uppercase">Scan</span>
+          </button>
+        </div>
+
+        <button
+          onClick={() => setActiveTab('grocery')}
+          className={`relative flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            activeTab === 'grocery'
+              ? 'text-emerald-600 font-black'
+              : 'text-slate-500 font-semibold'
+          }`}
+        >
+          <ShoppingCart className="w-5 h-5" />
+          <span className="text-[10px] mt-0.5">Grocery</span>
+          {weeklyPlan.length > 0 && (
+            <span className="absolute top-0.5 right-3 w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center">
+              {weeklyPlan.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('cooking')}
+          className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${
+            activeTab === 'cooking'
+              ? 'text-emerald-600 font-black'
+              : 'text-slate-500 font-semibold'
+          }`}
+        >
+          <ChefHat className="w-5 h-5" />
+          <span className="text-[10px] mt-0.5">Cook</span>
+        </button>
+      </nav>
+
+      {/* Clickable DIY Blend & Sauce Modal */}
       <BlendRecipeModal
         blendName={activeBlendModal}
         cabinet={cabinet}
@@ -785,6 +930,38 @@ export const App: React.FC = () => {
             },
           ]);
           showToast(`🛒 Added ${itemName} to your Grocery List!`);
+        }}
+      />
+
+      {/* AI Camera Photo Scanner Modal (Spice Cabinet + Fridge) */}
+      <PhotoScannerModal
+        isOpen={photoScannerState.open}
+        initialMode={photoScannerState.mode}
+        onClose={() =>
+          setPhotoScannerState((prev) => ({ ...prev, open: false }))
+        }
+        onImportToCabinet={(items) => {
+          items.forEach((item) =>
+            handleAddCabinetItem(item.name, item.category, 'in_stock')
+          );
+          showToast(
+            `📸 Auto-imported ${items.length} spices/sauces into your Cabinet as In-Stock!`
+          );
+          setActiveTab('cabinet');
+        }}
+        onImportToFridge={(items) => {
+          setOnHandFridgeItems((prev) => {
+            const merged = Array.from(new Set([...prev, ...items]));
+            localStorage.setItem(
+              STORAGE_KEYS.fridgeItems,
+              JSON.stringify(merged)
+            );
+            return merged;
+          });
+          showToast(
+            `📸 Added ${items.length} scanned ingredients to your Fridge Matcher!`
+          );
+          setActiveTab('catalog');
         }}
       />
     </div>
