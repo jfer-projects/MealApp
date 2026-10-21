@@ -125,6 +125,16 @@ export function subscribeToFamilyRealtime(onPayload: (table: string, payload: an
       { event: '*', schema: 'public', table: 'grocery_extras' },
       (payload) => onPayload('grocery_extras', payload)
     )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'grocery_checks' },
+      (payload) => onPayload('grocery_checks', payload)
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'household_settings' },
+      (payload) => onPayload('household_settings', payload)
+    )
     .subscribe();
 
   return () => {

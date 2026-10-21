@@ -17,12 +17,10 @@ import { UserProfile } from '../types/freshdiy';
 
 interface AuthScreenProps {
   onAuthenticated: (profile: UserProfile) => void;
-  onBypassOffline?: () => void;
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   onAuthenticated,
-  onBypassOffline,
 }) => {
   const [tab, setTab] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
@@ -382,19 +380,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   : 'Create Family Account'}
               </button>
             </form>
-          )}
-
-          {/* Quick Offline Demo Mode (Optional fallback) */}
-          {onBypassOffline && (
-            <div className="mt-5 pt-4 border-t border-slate-700/60 text-center">
-              <button
-                type="button"
-                onClick={onBypassOffline}
-                className="text-[11px] font-semibold text-slate-400 hover:text-emerald-400 transition cursor-pointer underline underline-offset-2"
-              >
-                Continue in Guest / Offline Mode
-              </button>
-            </div>
           )}
         </div>
 

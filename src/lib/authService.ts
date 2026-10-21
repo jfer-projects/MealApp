@@ -268,6 +268,30 @@ export async function joinHouseholdByCode(
 ): Promise<{ ok: boolean; message: string; household?: Household }> {
   try {
     const cleanCode = inviteCode.trim().toUpperCase();
+
+    // 1. Try secure RPC function first (prevents leaking all household codes)
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('join_household_with_code', {
+        invite_code_input: cleanCode,
+        member_name: displayName.trim() || 'Family Member',
+      });
+
+      if (!rpcError && rpcData) {
+        if (rpcData.ok) {
+          return {
+            ok: true,
+            message: rpcData.message,
+            household: rpcData.household as Household,
+          };
+        } else {
+          return { ok: false, message: rpcData.message };
+        }
+      }
+    } catch {
+      // Fallback to direct query if RPC not installed
+    }
+
+    // 2. Direct lookup fallback
     const { data: foundHousehold, error } = await supabase
       .from('households')
       .select('*')

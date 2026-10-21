@@ -2,13 +2,19 @@ import React, { useEffect, useState } from 'react';
 import {
   Check,
   Copy,
+  DollarSign,
+  ExternalLink,
+  Eye,
+  EyeOff,
   Home,
   KeyRound,
   LogOut,
   Mail,
   Plus,
+  Save,
   Share2,
   Shield,
+  Sparkles,
   User,
   Users,
   X,
@@ -18,12 +24,17 @@ import {
   joinHouseholdByCode,
   signOut,
 } from '../lib/authService';
+import { supabase } from '../lib/supabase';
 import { HouseholdMember, UserProfile } from '../types/freshdiy';
 
 interface FamilySettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: UserProfile;
+  geminiApiKey: string;
+  onUpdateGeminiApiKey: (key: string) => void;
+  hellofreshPrice: number;
+  onUpdateHellofreshPrice: (price: number) => void;
   onProfileUpdated: (updated: UserProfile) => void;
   onSignOut: () => void;
 }
@@ -32,6 +43,10 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
   isOpen,
   onClose,
   currentUser,
+  geminiApiKey,
+  onUpdateGeminiApiKey,
+  hellofreshPrice,
+  onUpdateHellofreshPrice,
   onProfileUpdated,
   onSignOut,
 }) => {
@@ -42,7 +57,17 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
   const [switching, setSwitching] = useState(false);
   const [switchMessage, setSwitchMessage] = useState<string | null>(null);
 
+  // Gemini & Cost Settings State
+  const [apiKeyInput, setApiKeyInput] = useState(geminiApiKey);
+  const [showKey, setShowKey] = useState(false);
+  const [priceInput, setPriceInput] = useState(String(hellofreshPrice || 11.49));
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
   const household = currentUser.household;
+
+  useEffect(() => {
+    setApiKeyInput(geminiApiKey);
+  }, [geminiApiKey]);
 
   useEffect(() => {
     if (household?.id) {
@@ -83,6 +108,31 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
     } else {
       handleCopyLink();
     }
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanKey = apiKeyInput.trim();
+    const numPrice = parseFloat(priceInput) || 11.49;
+
+    onUpdateGeminiApiKey(cleanKey);
+    onUpdateHellofreshPrice(numPrice);
+
+    if (household?.id) {
+      try {
+        await supabase.from('household_settings').upsert({
+          household_id: household.id,
+          gemini_api_key: cleanKey || null,
+          hellofresh_price_per_serving: numPrice,
+          updated_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn('Could not save to Supabase household_settings:', err);
+      }
+    }
+
+    setSettingsSaved(true);
+    setTimeout(() => setSettingsSaved(false), 2500);
   };
 
   const handleJoinDifferent = async (e: React.FormEvent) => {
@@ -197,6 +247,100 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
                 💡 Valleria or a friend can open that link or paste this code when signing up to link accounts.
               </p>
             </div>
+          </div>
+
+          {/* Household Gemini API Key & Cost Customizer */}
+          <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50/70 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Household AI &amp; Cost Settings
+                </h4>
+              </div>
+              <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-md">
+                Shared by this Family Only
+              </span>
+            </div>
+
+            <form onSubmit={handleSaveSettings} className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                    <KeyRound className="w-3.5 h-3.5 text-slate-500" />
+                    Google Gemini API Key
+                  </label>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 inline-flex items-center gap-1"
+                  >
+                    <span>Get Free Key</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Powers photo scanning &amp; recipe AI customization. Stored safely for your family only.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <DollarSign className="w-3.5 h-3.5 text-slate-500" />
+                  Your HelloFresh Box Price / Serving
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="5"
+                    max="30"
+                    value={priceInput}
+                    onChange={(e) => setPriceInput(e.target.value)}
+                    placeholder="11.49"
+                    className="w-full bg-white border border-slate-300 rounded-xl pl-6 pr-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Used by the Cost Estimator to calculate your actual weekly dollars saved.
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+              >
+                {settingsSaved ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Settings Saved!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Household Settings</span>
+                  </>
+                )}
+              </button>
+            </form>
           </div>
 
           {/* Members in Household */}

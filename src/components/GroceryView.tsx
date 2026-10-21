@@ -60,6 +60,7 @@ interface GroceryViewProps {
   onSetValleriaPhone: (phone: string) => void;
   checkedGroceryKeys: Record<string, boolean>;
   onToggleGroceryKey: (key: string) => void;
+  hellofreshPrice?: number;
   onAddExtra: (itemName: string, aisle: string) => void;
   onToggleExtra: (id: string) => void;
   onDeleteExtra: (id: string) => void;
@@ -101,6 +102,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
   onSetValleriaPhone,
   checkedGroceryKeys,
   onToggleGroceryKey,
+  hellofreshPrice = 11.49,
   onAddExtra,
   onToggleExtra,
   onDeleteExtra,
@@ -151,8 +153,8 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
 
   // Cost and Nutrition Aggregations
   const savings = useMemo(
-    () => computeWeeklySavings(currentWeekPlan, recipes),
-    [currentWeekPlan, recipes]
+    () => computeWeeklySavings(currentWeekPlan, recipes, hellofreshPrice),
+    [currentWeekPlan, recipes, hellofreshPrice]
   );
 
   const averageNutrition = useMemo(() => {

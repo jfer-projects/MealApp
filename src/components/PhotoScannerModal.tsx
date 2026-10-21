@@ -1,21 +1,28 @@
 import React, { useRef, useState } from 'react';
 import {
+  AlertCircle,
   Camera,
   Check,
+  CheckCircle2,
   Image as ImageIcon,
   KeyRound,
   Loader2,
   PackagePlus,
+  Plus,
   Refrigerator,
   Sparkles,
+  Trash2,
   Upload,
   X,
 } from 'lucide-react';
 import { CabinetItem } from '../types/freshdiy';
+import { analyzePhotoWithGemini } from '../utils/geminiClient';
 
 interface PhotoScannerModalProps {
   isOpen: boolean;
   initialMode: 'cabinet' | 'fridge';
+  geminiApiKey?: string;
+  onOpenFamilySettings?: () => void;
   onClose: () => void;
   onImportToCabinet: (
     items: { name: string; category: CabinetItem['category'] }[]
@@ -30,61 +37,11 @@ interface DetectedIngredient {
   confidence: string;
 }
 
-const KNOWN_CABINET_ITEMS: {
-  name: string;
-  category: CabinetItem['category'];
-  keywords: string[];
-}[] = [
-  { name: 'Garlic Powder', category: 'Spices', keywords: ['garlic'] },
-  { name: 'Onion Powder', category: 'Spices', keywords: ['onion'] },
-  { name: 'Paprika', category: 'Spices', keywords: ['paprika'] },
-  { name: 'Smoked Paprika', category: 'Spices', keywords: ['smoked'] },
-  { name: 'Chili Powder', category: 'Spices', keywords: ['chili'] },
-  { name: 'Ground Cumin', category: 'Spices', keywords: ['cumin'] },
-  { name: 'Dried Oregano', category: 'Spices', keywords: ['oregano'] },
-  { name: 'Dried Basil', category: 'Spices', keywords: ['basil'] },
-  { name: 'Dried Thyme', category: 'Spices', keywords: ['thyme'] },
-  { name: 'Dried Parsley', category: 'Spices', keywords: ['parsley'] },
-  { name: 'Ground Coriander', category: 'Spices', keywords: ['coriander'] },
-  { name: 'Ground Turmeric', category: 'Spices', keywords: ['turmeric'] },
-  { name: 'Ground Cinnamon', category: 'Spices', keywords: ['cinnamon'] },
-  { name: 'Ground Ginger', category: 'Spices', keywords: ['ginger'] },
-  { name: 'Chinese Five Spice', category: 'Spices', keywords: ['five', '5'] },
-  { name: 'Korean Chili Flakes', category: 'Spices', keywords: ['flake', 'crushed'] },
-  { name: 'Italian Seasoning', category: 'Spices', keywords: ['italian'] },
-  { name: 'Soy Sauce', category: 'Sauces', keywords: ['soy'] },
-  { name: 'Honey', category: 'Sauces', keywords: ['honey'] },
-  { name: 'Dijon Mustard', category: 'Sauces', keywords: ['dijon', 'mustard'] },
-  { name: 'Tomato Paste', category: 'Sauces', keywords: ['tomato'] },
-  { name: 'Rice Wine Vinegar', category: 'Oils & Vinegars', keywords: ['vinegar'] },
-  { name: 'Chicken Stock Concentrate', category: 'Broth Concentrates', keywords: ['chicken', 'stock', 'broth'] },
-];
-
-const KNOWN_FRIDGE_ITEMS: string[] = [
-  'Chicken Breast',
-  'Ground Beef',
-  'Salmon',
-  'Potatoes',
-  'Broccoli',
-  'Carrots',
-  'Bell Pepper',
-  'Spinach',
-  'Zucchini',
-  'Green Beans',
-  'Tomatoes',
-  'Scallions',
-  'Jasmine Rice',
-  'Tortillas',
-  'Dairy-Free Sour Cream',
-  'Plant-Based Butter',
-  'Unsweetened Oat Milk',
-];
-
-const GEMINI_KEY_STORAGE = 'freshdiy_gemini_api_key_v1';
-
 export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
   isOpen,
   initialMode,
+  geminiApiKey = '',
+  onOpenFamilySettings,
   onClose,
   onImportToCabinet,
   onImportToFridge,
@@ -92,135 +49,52 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
   const [scanMode, setScanMode] = useState<'cabinet' | 'fridge'>(initialMode);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [detected, setDetected] = useState<DetectedIngredient[]>([]);
   const [customAdd, setCustomAdd] = useState('');
-  const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
-  const [geminiApiKey, setGeminiApiKey] = useState<string>(
-    () => localStorage.getItem(GEMINI_KEY_STORAGE) || ''
-  );
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
-  const analyzeImageWithGeminiOrSmartVision = async (file: File) => {
+  const analyzeImage = async (file: File) => {
+    setScanError(null);
+    if (!geminiApiKey || !geminiApiKey.trim()) {
+      setScanError(
+        'A Gemini API Key is required to scan photos. Please enter your family key in Settings.'
+      );
+      return;
+    }
+
     setIsScanning(true);
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64DataUrl = reader.result as string;
-      setPreviewUrl(base64DataUrl);
+    setPreviewUrl(URL.createObjectURL(file));
 
-      // 1. If Gemini API Key is configured, call Gemini 2.5 Flash Vision API directly
-      if (geminiApiKey.trim()) {
-        try {
-          const base64Content = base64DataUrl.split(',')[1];
-          const prompt =
-            scanMode === 'cabinet'
-              ? 'Identify all spice jars, herbs, sauces, oils, and pantry staples visible in this photo. Return ONLY a JSON array of objects like [{"name": "Garlic Powder", "category": "Spices"}] where category is one of "Spices", "Sauces", "Broth Concentrates", "Oils & Vinegars", "Pantry".'
-              : 'Identify all fresh food ingredients, proteins, vegetables, fruits, grains, and dairy/dairy-free items visible in this photo. Return ONLY a JSON array of strings like ["Chicken Breast", "Broccoli", "Carrots"].';
-
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
-              geminiApiKey.trim()
-            )}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [
-                  {
-                    parts: [
-                      { text: prompt },
-                      {
-                        inline_data: {
-                          mime_type: file.type || 'image/jpeg',
-                          data: base64Content,
-                        },
-                      },
-                    ],
-                  },
-                ],
-              }),
-            }
-          );
-
-          if (res.ok) {
-            const data = await res.json();
-            const rawText: string =
-              data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-              const parsed = JSON.parse(jsonMatch[0]);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                const mapped: DetectedIngredient[] = parsed.map((item) => {
-                  if (typeof item === 'string') {
-                    return {
-                      name: item,
-                      category: 'Pantry',
-                      selected: true,
-                      confidence: '98% AI Vision',
-                    };
-                  }
-                  return {
-                    name: item.name || 'Spice',
-                    category: item.category || 'Spices',
-                    selected: true,
-                    confidence: '98% AI Vision',
-                  };
-                });
-                setDetected(mapped);
-                setIsScanning(false);
-                return;
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('Gemini Vision fallback to smart scanner:', err);
-        }
-      }
-
-      // 2. Built-in Instant Smart Photo Scanner (works 100% offline/out-of-the-box)
-      await new Promise((r) => setTimeout(r, 950));
-      const fileLower = file.name.toLowerCase();
-
-      if (scanMode === 'cabinet') {
-        const matchedByFilename = KNOWN_CABINET_ITEMS.filter((k) =>
-          k.keywords.some((kw) => fileLower.includes(kw))
-        );
-        const results =
-          matchedByFilename.length > 0
-            ? matchedByFilename
-            : KNOWN_CABINET_ITEMS.slice(0, 10);
-
+    try {
+      const items = await analyzePhotoWithGemini(file, scanMode, geminiApiKey);
+      if (items.length === 0) {
+        setScanError('No recognizable items found in photo. Please ensure clear lighting and try again.');
+      } else {
         setDetected(
-          results.map((item, idx) => ({
+          items.map((item) => ({
             name: item.name,
             category: item.category,
             selected: true,
-            confidence: `${99 - idx}% Match`,
-          }))
-        );
-      } else {
-        setDetected(
-          KNOWN_FRIDGE_ITEMS.slice(0, 8).map((name, idx) => ({
-            name,
-            category: 'Pantry',
-            selected: true,
-            confidence: `${98 - idx}% Match`,
+            confidence: 'Gemini Vision AI',
           }))
         );
       }
-
+    } catch (err: any) {
+      setScanError(err?.message || 'Failed to analyze photo with Gemini AI.');
+    } finally {
       setIsScanning(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      analyzeImageWithGeminiOrSmartVision(file);
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      analyzeImage(file);
     }
   };
 
@@ -297,25 +171,37 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
           </div>
         </div>
 
-        {/* Optional Gemini Vision Key Input */}
-        {showApiKeyConfig && (
-          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-            <p className="text-xs font-bold text-slate-800">
-              Optional: Google Gemini Vision API Key
-            </p>
-            <p className="text-[11px] text-slate-500">
-              Paste a free Gemini API key for live cloud OCR, or leave blank to use the built-in smart ingredient recognizer.
-            </p>
-            <input
-              type="password"
-              value={geminiApiKey}
-              onChange={(e) => {
-                setGeminiApiKey(e.target.value);
-                localStorage.setItem(GEMINI_KEY_STORAGE, e.target.value);
-              }}
-              placeholder="AIzaSy..."
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs"
-            />
+        {/* Gemini Vision Key Status / Warning */}
+        {!geminiApiKey ? (
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-start gap-3">
+            <KeyRound className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs font-bold text-amber-900">
+                Gemini Vision API Key Required
+              </p>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                To accurately recognize spices and fridge ingredients from photos, enter your Gemini API key in Family Settings.
+              </p>
+              {onOpenFamilySettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenFamilySettings();
+                  }}
+                  className="mt-2 text-xs font-bold text-amber-900 underline underline-offset-2 hover:text-amber-950 cursor-pointer"
+                >
+                  Configure in Family Settings →
+                </button>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {scanError && (
+          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-rose-800 text-xs font-semibold">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{scanError}</span>
           </div>
         )}
 

@@ -45,6 +45,7 @@ import {
   WeeklyPlanItem,
 } from './types/freshdiy';
 import { forkRecipeFromFeedback } from './utils/aiVersioningEngine';
+import { forkRecipeWithGemini } from './utils/geminiClient';
 import { DEFAULT_CABINET_ITEMS } from './utils/blendDecoder';
 import { getAdjacentWeek, getMondayOfWeek } from './utils/dateUtils';
 import { deductCabinetForCompletedMeals } from './utils/groceryEngine';
@@ -166,6 +167,15 @@ export const App: React.FC = () => {
   const [authChecking, setAuthChecking] = useState<boolean>(true);
   const [isFamilyModalOpen, setIsFamilyModalOpen] = useState<boolean>(false);
 
+  // Household Settings (Gemini Key & Cost Benchmarks)
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => {
+    return localStorage.getItem('freshdiy_gemini_api_key_v1') || '';
+  });
+  const [hellofreshPrice, setHellofreshPrice] = useState<number>(() => {
+    const saved = localStorage.getItem('freshdiy_hf_price_v1');
+    return saved ? parseFloat(saved) : 11.49;
+  });
+
   // Supabase Auth Session & Lifecycle Listener
   useEffect(() => {
     let isMounted = true;
@@ -197,6 +207,49 @@ export const App: React.FC = () => {
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  // Sync Household Settings from Supabase
+  useEffect(() => {
+    if (!currentUser?.household?.id || !supaStatus.tablesReady) return;
+    supabase
+      .from('household_settings')
+      .select('*')
+      .eq('household_id', currentUser.household.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          if (data.gemini_api_key) {
+            setGeminiApiKey(data.gemini_api_key);
+            localStorage.setItem('freshdiy_gemini_api_key_v1', data.gemini_api_key);
+          }
+          if (data.hellofresh_price_per_serving) {
+            setHellofreshPrice(Number(data.hellofresh_price_per_serving));
+            localStorage.setItem('freshdiy_hf_price_v1', String(data.hellofresh_price_per_serving));
+          }
+        }
+      });
+  }, [currentUser?.household?.id, supaStatus.tablesReady]);
+
+  // Sync Shared In-Store Grocery Checkmarks from Supabase
+  useEffect(() => {
+    if (!currentUser?.household?.id || !supaStatus.tablesReady) return;
+    supabase
+      .from('grocery_checks')
+      .select('item_key, checked')
+      .eq('household_id', currentUser.household.id)
+      .eq('week_start_date', activeWeekStartDate)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setCheckedGroceryKeys((prev) => {
+            const next = { ...prev };
+            for (const row of data) {
+              next[row.item_key] = row.checked;
+            }
+            return next;
+          });
+        }
+      });
+  }, [currentUser?.household?.id, activeWeekStartDate, supaStatus.tablesReady]);
 
   // Supabase Status
   const [supaStatus, setSupaStatus] = useState<SupabaseSyncStatus>({
@@ -356,6 +409,35 @@ export const App: React.FC = () => {
           if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id},household_id.is.null`);
           const { data } = await query;
           if (data) setExtras(data as GroceryExtra[]);
+        } else if (table === 'grocery_checks') {
+          if (hId) {
+            const { data } = await supabase
+              .from('grocery_checks')
+              .select('item_key, checked')
+              .eq('household_id', hId)
+              .eq('week_start_date', activeWeekStartDate);
+            if (data) {
+              setCheckedGroceryKeys((prev) => {
+                const next = { ...prev };
+                for (const row of data) {
+                  next[row.item_key] = row.checked;
+                }
+                return next;
+              });
+            }
+          }
+        } else if (table === 'household_settings') {
+          if (hId) {
+            const { data } = await supabase
+              .from('household_settings')
+              .select('*')
+              .eq('household_id', hId)
+              .maybeSingle();
+            if (data) {
+              if (data.gemini_api_key) setGeminiApiKey(data.gemini_api_key);
+              if (data.hellofresh_price_per_serving) setHellofreshPrice(Number(data.hellofresh_price_per_serving));
+            }
+          }
         }
       } catch (err) {
         console.error('Realtime update refresh error:', err);
@@ -426,11 +508,27 @@ export const App: React.FC = () => {
     setActiveWeekStartDate((prev) => getAdjacentWeek(prev, offset));
   };
 
-  const handleToggleGroceryKey = (key: string) => {
+  const handleToggleGroceryKey = async (key: string) => {
+    const nextVal = !checkedGroceryKeys[key];
     setCheckedGroceryKeys((prev) => ({
       ...prev,
-      [key]: !prev[key],
+      [key]: nextVal,
     }));
+
+    if (supaStatus.tablesReady && currentUser?.household?.id) {
+      try {
+        await supabase.from('grocery_checks').upsert({
+          household_id: currentUser.household.id,
+          week_start_date: activeWeekStartDate,
+          item_key: key,
+          checked: nextVal,
+          checked_by_name: currentUser.display_name,
+          updated_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn('Could not sync grocery checkmark:', err);
+      }
+    }
   };
 
   const handleAddToPlan = async (
@@ -620,13 +718,24 @@ export const App: React.FC = () => {
   const handleSubmitFeedbackAndFork = async (
     baseRecipe: Recipe,
     authorName: string,
-    notes: string
+    notes: string,
+    overrideApiKey?: string
   ) => {
-    const { newRecipe, changeSummary } = forkRecipeFromFeedback(
-      baseRecipe,
-      notes,
-      authorName
-    );
+    let forkedResult: { newRecipe: Recipe; changeSummary: string[] };
+    const keyToUse = overrideApiKey || geminiApiKey;
+
+    if (keyToUse && keyToUse.trim()) {
+      try {
+        forkedResult = await forkRecipeWithGemini(baseRecipe, notes, authorName, keyToUse);
+      } catch (err) {
+        console.warn('Gemini LLM fork failed, falling back to rule engine:', err);
+        forkedResult = forkRecipeFromFeedback(baseRecipe, notes, authorName);
+      }
+    } else {
+      forkedResult = forkRecipeFromFeedback(baseRecipe, notes, authorName);
+    }
+
+    const { newRecipe, changeSummary } = forkedResult;
 
     const feedbackEntry: RecipeFeedback = {
       id: `fb-${Date.now()}`,
@@ -740,25 +849,6 @@ export const App: React.FC = () => {
         onAuthenticated={(profile) => {
           setCurrentUser(profile);
           showToast(`👋 Welcome, ${profile.display_name}!`);
-        }}
-        onBypassOffline={() => {
-          setCurrentUser({
-            id: 'guest-user',
-            email: 'guest@freshdiy.local',
-            display_name: 'Guest Family',
-            household: {
-              id: 'guest-household',
-              name: 'Ferris Family Kitchen',
-              invite_code: 'FAM-DEMO',
-            },
-            household_member: {
-              id: 'guest-member',
-              household_id: 'guest-household',
-              user_id: 'guest-user',
-              display_name: 'Parent',
-              role: 'owner',
-            },
-          });
         }}
       />
     );
@@ -1040,6 +1130,7 @@ export const App: React.FC = () => {
             onSetValleriaPhone={setValleriaPhone}
             checkedGroceryKeys={checkedGroceryKeys}
             onToggleGroceryKey={handleToggleGroceryKey}
+            hellofreshPrice={hellofreshPrice}
             onAddExtra={async (itemName, aisle) => {
               const newEx: GroceryExtra = {
                 id: `extra-${Date.now()}`,
@@ -1096,6 +1187,7 @@ export const App: React.FC = () => {
             allVersions={activeCookingRecipeVersions}
             servings={cookingServings}
             isDairyFree={isDairyFree}
+            geminiApiKey={geminiApiKey}
             feedbackHistory={activeRecipeFeedback}
             onChangeServings={setCookingServings}
             onSelectVersion={(ver) => setCookingRecipeId(ver.id)}
@@ -1228,6 +1320,8 @@ export const App: React.FC = () => {
       <PhotoScannerModal
         isOpen={photoScannerState.open}
         initialMode={photoScannerState.mode}
+        geminiApiKey={geminiApiKey}
+        onOpenFamilySettings={() => setIsFamilyModalOpen(true)}
         onClose={() =>
           setPhotoScannerState((prev) => ({ ...prev, open: false }))
         }
@@ -1261,6 +1355,16 @@ export const App: React.FC = () => {
         isOpen={isFamilyModalOpen}
         onClose={() => setIsFamilyModalOpen(false)}
         currentUser={currentUser}
+        geminiApiKey={geminiApiKey}
+        onUpdateGeminiApiKey={(k) => {
+          setGeminiApiKey(k);
+          localStorage.setItem('freshdiy_gemini_api_key_v1', k);
+        }}
+        hellofreshPrice={hellofreshPrice}
+        onUpdateHellofreshPrice={(p) => {
+          setHellofreshPrice(p);
+          localStorage.setItem('freshdiy_hf_price_v1', String(p));
+        }}
         onProfileUpdated={(updated) => setCurrentUser(updated)}
         onSignOut={() => {
           setCurrentUser(null);

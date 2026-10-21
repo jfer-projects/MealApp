@@ -109,6 +109,9 @@ export interface GroceryExtra {
   item_name: string;
   aisle: string;
   checked: boolean;
+  /** Recurring staples (milk, eggs...) automatically appear on every week's list */
+  is_recurring?: boolean;
+  added_by_name?: string | null;
 }
 
 export interface Household {
@@ -124,8 +127,48 @@ export interface HouseholdMember {
   household_id: string;
   user_id: string;
   display_name: string;
+  email?: string | null;
   role: 'owner' | 'member';
   created_at?: string;
+}
+
+export type DietaryFlag = 'nut_free' | 'vegetarian' | 'pescatarian' | 'gluten_free' | 'pork_free';
+
+/** Household-wide settings shared by every member (stored in public.household_settings) */
+export interface HouseholdSettings {
+  household_id: string;
+  /** Gemini API key — readable ONLY by members of this household (RLS) */
+  gemini_api_key: string | null;
+  is_dairy_free: boolean;
+  default_servings: ServingsSize;
+  dietary_flags: DietaryFlag[];
+  /** What the household was paying HelloFresh per serving (for the savings estimate) */
+  hellofresh_price_per_serving: number;
+  /** Preferred grocery aisle walking order for this household's store */
+  aisle_order: string[];
+  onboarding_complete: boolean;
+}
+
+/** Synced check-off state for computed (recipe-derived) grocery items */
+export interface GroceryCheck {
+  id: string;
+  household_id: string;
+  week_start_date: string;
+  item_key: string;
+  checked: boolean;
+  checked_by_name: string | null;
+  updated_at?: string;
+}
+
+/** Household-level favorite / rating / cook history, keyed by recipe original_id */
+export interface RecipeRating {
+  id: string;
+  household_id: string;
+  recipe_id: string;
+  rating: -1 | 0 | 1;
+  is_favorite: boolean;
+  times_cooked: number;
+  last_cooked_at: string | null;
 }
 
 export interface UserProfile {

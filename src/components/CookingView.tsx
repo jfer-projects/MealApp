@@ -11,6 +11,7 @@ import {
   RotateCcw,
   ShoppingCart,
   Sparkles,
+  Sun,
   Users,
   Wind,
 } from 'lucide-react';
@@ -34,14 +35,16 @@ interface CookingViewProps {
   allVersions: Recipe[];
   servings: ServingsSize;
   isDairyFree: boolean;
+  geminiApiKey?: string;
   feedbackHistory: RecipeFeedback[];
   onChangeServings: (s: ServingsSize) => void;
   onSelectVersion: (r: Recipe) => void;
   onSubmitFeedbackAndFork: (
     recipe: Recipe,
     authorName: string,
-    notes: string
-  ) => void;
+    notes: string,
+    geminiApiKey?: string
+  ) => Promise<void> | void;
   onAddRecipeToGroceryList: (recipe: Recipe, servings: ServingsSize) => void;
   onOpenBlendModal: (blendName: string) => void;
   onBackToCatalog: () => void;
@@ -60,6 +63,7 @@ export const CookingView: React.FC<CookingViewProps> = ({
   allVersions,
   servings,
   isDairyFree,
+  geminiApiKey = '',
   feedbackHistory,
   onChangeServings,
   onSelectVersion,
@@ -77,6 +81,29 @@ export const CookingView: React.FC<CookingViewProps> = ({
   const [completedSteps, setCompletedSteps] = useState<Record<number, boolean>>(
     {}
   );
+  const [wakeLockActive, setWakeLockActive] = useState(false);
+
+  // Screen Wake Lock API to prevent phone sleep while cooking
+  useEffect(() => {
+    let wakeLock: any = null;
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+          setWakeLockActive(true);
+        } catch {
+          // wake lock denied or unsupported
+        }
+      }
+    };
+    requestWakeLock();
+
+    return () => {
+      if (wakeLock) {
+        wakeLock.release().catch(() => {});
+      }
+    };
+  }, []);
 
   // Timer state per step number
   const [timers, setTimers] = useState<
@@ -88,6 +115,7 @@ export const CookingView: React.FC<CookingViewProps> = ({
     'Valleria'
   );
   const [feedbackNotes, setFeedbackNotes] = useState('');
+  const [isForking, setIsForking] = useState(false);
   const [forkBanner, setForkBanner] = useState<string | null>(null);
 
   useEffect(() => {
@@ -168,17 +196,20 @@ export const CookingView: React.FC<CookingViewProps> = ({
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const handleFeedbackSubmit = (e: React.FormEvent) => {
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!feedbackNotes.trim()) return;
-    onSubmitFeedbackAndFork(recipe, authorName, feedbackNotes.trim());
-    setForkBanner(
-      `AI Recipe Versioning Engine forked v${recipe.version} ➔ v${
-        recipe.version + 1
-      } based on ${authorName}'s notes!`
-    );
-    setFeedbackNotes('');
-    setTimeout(() => setForkBanner(null), 6000);
+    setIsForking(true);
+    try {
+      await onSubmitFeedbackAndFork(recipe, authorName, feedbackNotes.trim(), geminiApiKey);
+      setForkBanner(
+        `✨ Custom recipe v${recipe.version + 1} created based on ${authorName}'s notes!`
+      );
+      setFeedbackNotes('');
+      setTimeout(() => setForkBanner(null), 6000);
+    } finally {
+      setIsForking(false);
+    }
   };
 
   return (
@@ -193,6 +224,13 @@ export const CookingView: React.FC<CookingViewProps> = ({
         </button>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {wakeLockActive && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs font-bold shadow-xs">
+              <Sun className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+              <span>Screen Kept Awake</span>
+            </span>
+          )}
+
           <button
             onClick={() => onAddRecipeToGroceryList(recipe, servings)}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"

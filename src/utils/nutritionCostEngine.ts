@@ -77,7 +77,8 @@ export function estimateRecipeNutrition(recipe: Recipe): NutritionEstimate {
  */
 export function computeWeeklySavings(
   weeklyPlan: WeeklyPlanItem[],
-  recipes: Recipe[]
+  recipes: Recipe[],
+  hfPricePerServing: number = 11.49
 ): CostSavingsEstimate {
   let totalServings = 0;
   let mealsCount = 0;
@@ -101,7 +102,7 @@ export function computeWeeklySavings(
     };
   }
 
-  const HF_PER_SERVING = 11.49;
+  const HF_PER_SERVING = hfPricePerServing > 0 ? hfPricePerServing : 11.49;
   const HF_SHIPPING = 10.99;
   const DIY_PER_SERVING = 3.85;
 
