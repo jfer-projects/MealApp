@@ -6,6 +6,7 @@
 CREATE TABLE IF NOT EXISTS public.household_settings (
     household_id UUID PRIMARY KEY REFERENCES public.households(id) ON DELETE CASCADE,
     gemini_api_key TEXT,
+    gemini_api_key_set_by UUID,
     is_dairy_free BOOLEAN NOT NULL DEFAULT TRUE,
     default_servings INTEGER NOT NULL DEFAULT 4 CHECK (default_servings IN (2, 4, 6)),
     dietary_flags TEXT[] NOT NULL DEFAULT '{}',
@@ -16,6 +17,8 @@ CREATE TABLE IF NOT EXISTS public.household_settings (
     ],
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.household_settings ADD COLUMN IF NOT EXISTS gemini_api_key_set_by UUID;
 
 ALTER TABLE public.household_settings ENABLE ROW LEVEL SECURITY;
 

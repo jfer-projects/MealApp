@@ -193,10 +193,32 @@ export const App: React.FC = () => {
   const [geminiApiKey, setGeminiApiKey] = useState<string>(() => {
     return localStorage.getItem('freshdiy_gemini_api_key_v1') || '';
   });
+  const [geminiKeyAuthorId, setGeminiKeyAuthorId] = useState<string | null>(() => {
+    return localStorage.getItem('freshdiy_gemini_key_author_v1') || null;
+  });
   const [hellofreshPrice, setHellofreshPrice] = useState<number>(() => {
     const saved = localStorage.getItem('freshdiy_hf_price_v1');
     return saved ? parseFloat(saved) : 11.49;
   });
+
+  const isKeyAuthor = useMemo(() => {
+    // If no key is set yet, any household member can configure one
+    if (!geminiApiKey || !geminiApiKey.trim()) return true;
+    // Standalone user without household is author of their key
+    if (!currentUser?.household?.id) return true;
+    // If user's ID matches the recorded author ID
+    if (geminiKeyAuthorId && currentUser.id === geminiKeyAuthorId) return true;
+    // If creator of the household or household owner
+    if (
+      !geminiKeyAuthorId &&
+      (currentUser.household.created_by === currentUser.id ||
+        currentUser.household_member?.role === 'owner')
+    ) {
+      return true;
+    }
+    // Otherwise, this user is a family member using the shared family key
+    return false;
+  }, [geminiApiKey, geminiKeyAuthorId, currentUser]);
 
   // Supabase Status
   const [supaStatus, setSupaStatus] = useState<SupabaseSyncStatus>({
@@ -288,6 +310,10 @@ export const App: React.FC = () => {
           if (data.gemini_api_key) {
             setGeminiApiKey(data.gemini_api_key);
             localStorage.setItem('freshdiy_gemini_api_key_v1', data.gemini_api_key);
+          }
+          if (data.gemini_api_key_set_by) {
+            setGeminiKeyAuthorId(data.gemini_api_key_set_by);
+            localStorage.setItem('freshdiy_gemini_key_author_v1', data.gemini_api_key_set_by);
           }
           if (data.hellofresh_price_per_serving) {
             setHellofreshPrice(Number(data.hellofresh_price_per_serving));
@@ -502,6 +528,7 @@ export const App: React.FC = () => {
               .maybeSingle();
             if (data) {
               if (data.gemini_api_key) setGeminiApiKey(data.gemini_api_key);
+              if (data.gemini_api_key_set_by) setGeminiKeyAuthorId(data.gemini_api_key_set_by);
               if (data.hellofresh_price_per_serving) setHellofreshPrice(Number(data.hellofresh_price_per_serving));
             }
           }
@@ -1889,15 +1916,22 @@ export const App: React.FC = () => {
         isOpen={photoScannerState.open}
         initialMode={photoScannerState.mode}
         geminiApiKey={geminiApiKey}
+        isKeyAuthor={isKeyAuthor}
+        hasFamilyKey={Boolean(geminiApiKey && geminiApiKey.trim())}
         onUpdateGeminiApiKey={(k) => {
           setGeminiApiKey(k);
+          setGeminiKeyAuthorId(currentUser?.id || null);
           localStorage.setItem('freshdiy_gemini_api_key_v1', k);
+          if (currentUser?.id) {
+            localStorage.setItem('freshdiy_gemini_key_author_v1', currentUser.id);
+          }
           if (currentUser?.household?.id) {
             supabase
               .from('household_settings')
               .upsert({
                 household_id: currentUser.household.id,
                 gemini_api_key: k || null,
+                gemini_api_key_set_by: k ? currentUser.id : null,
                 updated_at: new Date().toISOString(),
               })
               .then(() => {})
@@ -1947,9 +1981,14 @@ export const App: React.FC = () => {
         onClose={() => setIsFamilyModalOpen(false)}
         currentUser={currentUser}
         geminiApiKey={geminiApiKey}
+        isKeyAuthor={isKeyAuthor}
         onUpdateGeminiApiKey={(k) => {
           setGeminiApiKey(k);
+          setGeminiKeyAuthorId(currentUser?.id || null);
           localStorage.setItem('freshdiy_gemini_api_key_v1', k);
+          if (currentUser?.id) {
+            localStorage.setItem('freshdiy_gemini_key_author_v1', currentUser.id);
+          }
         }}
         hellofreshPrice={hellofreshPrice}
         onUpdateHellofreshPrice={(p) => {

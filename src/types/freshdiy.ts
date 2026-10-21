@@ -156,6 +156,8 @@ export interface HouseholdSettings {
   household_id: string;
   /** Gemini API key — readable ONLY by members of this household (RLS) */
   gemini_api_key: string | null;
+  /** User ID of the member who entered/configured this key */
+  gemini_api_key_set_by?: string | null;
   is_dairy_free: boolean;
   default_servings: ServingsSize;
   dietary_flags: DietaryFlag[];
