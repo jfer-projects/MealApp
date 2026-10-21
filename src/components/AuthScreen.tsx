@@ -28,7 +28,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [householdMode, setHouseholdMode] = useState<'create' | 'join'>('create');
-  const [householdName, setHouseholdName] = useState('Ferris Family Kitchen');
+  const [householdName, setHouseholdName] = useState('Our Family Kitchen');
   const [inviteCode, setInviteCode] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -251,7 +251,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     required
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="e.g. Ferris or Valleria"
+                    placeholder="e.g. Your Name"
                     className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                   />
                 </div>
@@ -338,7 +338,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       type="text"
                       value={householdName}
                       onChange={(e) => setHouseholdName(e.target.value)}
-                      placeholder="e.g. Ferris Family Kitchen"
+                      placeholder="e.g. Our Family Kitchen"
                       className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                     />
                     <p className="text-[10px] text-slate-400 mt-1">

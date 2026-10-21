@@ -913,7 +913,7 @@ export const App: React.FC = () => {
                   title="Manage Family Kitchen & Invite Valleria or Friends"
                 >
                   <Home className="w-3 h-3 text-emerald-600" />
-                  <span>{currentUser.household?.name || 'Ferris Family'}</span>
+                  <span>{currentUser.household?.name || 'Our Family Kitchen'}</span>
                   <span>•</span>
                   <span>{currentUser.display_name}</span>
                 </button>
