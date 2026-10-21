@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bg)"/>
+  <!-- Chef Hat -->
+  <path d="M160 352h192v32H160zm32-160c-26.5 0-48 21.5-48 48 0 8.3 2.1 16.1 5.8 22.9C130.6 270.5 112 295.6 112 325.3c0 23.6 19.1 42.7 42.7 42.7h202.7c23.6 0 42.7-19.1 42.7-42.7 0-29.8-18.6-54.8-47.8-62.4 3.7-6.8 5.8-14.6 5.8-22.9 0-26.5-21.5-48-48-48-5.3 0-10.4.9-15.1 2.5C284.1 174.1 261.2 160 235 160c-15.6 0-30 5-41.9 13.5-5.5-9.2-15.6-15.5-27.1-15.5z" fill="#ffffff" opacity="0.95"/>
+  <!-- Decorative Leaf for Dairy-Free & Fresh -->
+  <path d="M352 144c-32 0-64 16-80 48 32 0 64-16 80-48z" fill="#34d399"/>
+</svg>

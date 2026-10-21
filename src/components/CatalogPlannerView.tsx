@@ -4,6 +4,8 @@ import {
   Camera,
   CheckCircle2,
   ChefHat,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Flame,
   Plus,
@@ -26,6 +28,7 @@ import {
 } from '../types/freshdiy';
 import { findBlendDefinition } from '../utils/blendDecoder';
 import { formatAmount, transformIngredient } from '../utils/dairyEngine';
+import { formatWeekRange } from '../utils/dateUtils';
 import {
   COMMON_FRIDGE_STAPLES,
   evaluateRecipeMatch,
@@ -38,6 +41,8 @@ interface CatalogPlannerViewProps {
   weeklyPlan: WeeklyPlanItem[];
   defaultServings: ServingsSize;
   isDairyFree: boolean;
+  activeWeekStartDate: string;
+  onNavigateWeek: (offset: number) => void;
   onHandFridgeItems: string[];
   onToggleFridgeItem: (item: string) => void;
   onClearFridgeItems: () => void;
@@ -67,6 +72,8 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
   weeklyPlan,
   defaultServings,
   isDairyFree,
+  activeWeekStartDate,
+  onNavigateWeek,
   onHandFridgeItems,
   onToggleFridgeItem,
   onClearFridgeItems,
@@ -89,6 +96,12 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
     COMMON_FRIDGE_STAPLES[0].category
   );
   const [visibleLimit, setVisibleLimit] = useState(24);
+
+  // Filter weekly plan items for the active week
+  const currentWeekPlan = useMemo(
+    () => weeklyPlan.filter((p) => p.week_start_date === activeWeekStartDate),
+    [weeklyPlan, activeWeekStartDate]
+  );
 
   // Compute match scores for all recipes
   const matchMap = useMemo(() => {
@@ -170,13 +183,13 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
     setCustomFridgeInput('');
   };
 
-  const plannedCount = weeklyPlan.length;
-  const completedCount = weeklyPlan.filter((p) => p.status === 'completed').length;
+  const plannedCount = currentWeekPlan.length;
+  const completedCount = currentWeekPlan.filter((p) => p.status === 'completed').length;
   const inStockCabinetCount = cabinet.filter(
     (c) => c.status !== 'out_of_stock'
   ).length;
 
-  const activeDayPlan = weeklyPlan.find(
+  const activeDayPlan = currentWeekPlan.find(
     (p) => p.day_of_week === selectedDayForAdd
   );
   const activeDayRecipe = activeDayPlan
@@ -194,15 +207,33 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                 <Calendar className="w-4 h-4" />
               </span>
               <h2 className="text-base sm:text-lg font-black text-slate-900">
-                Family Weekly Meal Plan
+                Family Meal Plan
               </h2>
               <span className="px-2.5 py-0.5 text-xs font-extrabold rounded-full bg-emerald-100 text-emerald-800">
                 {plannedCount}/7 Days
               </span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Tap a day below, then tap any recipe to schedule it for you &amp; Valleria.
-            </p>
+
+            {/* Week Switcher in Planner */}
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                onClick={() => onNavigateWeek(-1)}
+                className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                title="Previous Week"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-xs font-bold text-slate-700">
+                Week of {formatWeekRange(activeWeekStartDate)}
+              </span>
+              <button
+                onClick={() => onNavigateWeek(1)}
+                className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                title="Next Week"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -243,7 +274,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
         {/* Horizontal Swipeable Day Strip (Thumb-Optimized for Mobile) */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
           {DAYS_OF_WEEK.map((day) => {
-            const pItem = weeklyPlan.find((p) => p.day_of_week === day);
+            const pItem = currentWeekPlan.find((p) => p.day_of_week === day);
             const isSelected = selectedDayForAdd === day;
             return (
               <button

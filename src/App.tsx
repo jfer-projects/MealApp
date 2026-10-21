@@ -18,6 +18,7 @@ import { GroceryView } from './components/GroceryView';
 import { PhotoScannerModal } from './components/PhotoScannerModal';
 import {
   checkSupabaseTablesReady,
+  subscribeToFamilyRealtime,
   supabase,
   SupabaseSyncStatus,
   syncAllToSupabase,
@@ -35,6 +36,7 @@ import {
 } from './types/freshdiy';
 import { forkRecipeFromFeedback } from './utils/aiVersioningEngine';
 import { DEFAULT_CABINET_ITEMS } from './utils/blendDecoder';
+import { getAdjacentWeek, getMondayOfWeek } from './utils/dateUtils';
 import { deductCabinetForCompletedMeals } from './utils/groceryEngine';
 
 type ActiveTab = 'catalog' | 'cabinet' | 'grocery' | 'cooking';
@@ -48,11 +50,35 @@ const STORAGE_KEYS = {
   isDairyFree: 'freshdiy_is_dairy_free_v1',
   defaultServings: 'freshdiy_default_servings_v1',
   valleriaPhone: 'freshdiy_valleria_phone_v1',
+  valleriaEmail: 'freshdiy_valleria_email_v1',
+  familyMember: 'freshdiy_family_member_v1',
+  activeWeek: 'freshdiy_active_week_v1',
+  checkedGroceryKeys: 'freshdiy_checked_grocery_keys_v1',
   fridgeItems: 'freshdiy_fridge_items_v1',
 };
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog');
+
+  // Dated weekly navigation: Monday-based YYYY-MM-DD
+  const [activeWeekStartDate, setActiveWeekStartDate] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEYS.activeWeek) || getMondayOfWeek();
+  });
+
+  // Family profile toggle: 'Parent' vs 'Valleria'
+  const [activeFamilyMember, setActiveFamilyMember] = useState<'Parent' | 'Valleria'>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.familyMember);
+    return saved === 'Valleria' ? 'Valleria' : 'Parent';
+  });
+
+  const [valleriaEmail, setValleriaEmail] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEYS.valleriaEmail) || '';
+  });
+
+  const [checkedGroceryKeys, setCheckedGroceryKeys] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.checkedGroceryKeys);
+    return saved ? JSON.parse(saved) : {};
+  });
 
   const [onHandFridgeItems, setOnHandFridgeItems] = useState<string[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.fridgeItems);
@@ -98,14 +124,14 @@ export const App: React.FC = () => {
       : [
           {
             id: 'extra-1',
-            week_start_date: '2026-10-19',
+            week_start_date: getMondayOfWeek(),
             item_name: 'Kids Organic Apple Sauce Pouches',
             aisle: 'Household & Extras',
             checked: false,
           },
           {
             id: 'extra-2',
-            week_start_date: '2026-10-19',
+            week_start_date: getMondayOfWeek(),
             item_name: 'Barista Oat Milk (for Coffee)',
             aisle: 'Dairy Alternatives',
             checked: false,
@@ -218,11 +244,12 @@ export const App: React.FC = () => {
         setRecipes(mergedCatalog);
 
         const existingPlan = localStorage.getItem(STORAGE_KEYS.plan);
+        const currentMonday = getMondayOfWeek();
         if (!existingPlan && mergedCatalog.length >= 3) {
           const starterPlan: WeeklyPlanItem[] = [
             {
               id: 'plan-mon',
-              week_start_date: '2026-10-19',
+              week_start_date: currentMonday,
               recipe_id: mergedCatalog[0].id,
               day_of_week: 'Monday',
               servings: 4,
@@ -230,7 +257,7 @@ export const App: React.FC = () => {
             },
             {
               id: 'plan-wed',
-              week_start_date: '2026-10-19',
+              week_start_date: currentMonday,
               recipe_id: mergedCatalog[1].id,
               day_of_week: 'Wednesday',
               servings: 4,
@@ -238,7 +265,7 @@ export const App: React.FC = () => {
             },
             {
               id: 'plan-fri',
-              week_start_date: '2026-10-19',
+              week_start_date: currentMonday,
               recipe_id: mergedCatalog[2].id,
               day_of_week: 'Friday',
               servings: 4,
@@ -254,6 +281,32 @@ export const App: React.FC = () => {
     }
     loadInitialData();
   }, []);
+
+  // Multi-device Realtime Sync for Valleria & Family (no paid SMS)
+  useEffect(() => {
+    if (!supaStatus.tablesReady) return;
+
+    const unsubscribe = subscribeToFamilyRealtime(async (table) => {
+      try {
+        if (table === 'weekly_plan') {
+          const { data } = await supabase.from('weekly_plan').select('*');
+          if (data) setWeeklyPlan(data as WeeklyPlanItem[]);
+        } else if (table === 'cabinet') {
+          const { data } = await supabase.from('cabinet').select('*').order('item_name', { ascending: true });
+          if (data) setCabinet(data as CabinetItem[]);
+        } else if (table === 'grocery_extras') {
+          const { data } = await supabase.from('grocery_extras').select('*').order('created_at', { ascending: true });
+          if (data) setExtras(data as GroceryExtra[]);
+        }
+      } catch (err) {
+        console.error('Realtime update refresh error:', err);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [supaStatus.tablesReady]);
 
   useEffect(() => {
     const forksOnly = recipes.filter((r) => r.version > 1);
@@ -293,7 +346,34 @@ export const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEYS.valleriaPhone, valleriaPhone);
   }, [valleriaPhone]);
 
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.valleriaEmail, valleriaEmail);
+  }, [valleriaEmail]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.familyMember, activeFamilyMember);
+  }, [activeFamilyMember]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.activeWeek, activeWeekStartDate);
+  }, [activeWeekStartDate]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.checkedGroceryKeys, JSON.stringify(checkedGroceryKeys));
+  }, [checkedGroceryKeys]);
+
   // Handlers
+  const handleNavigateWeek = (offset: number) => {
+    setActiveWeekStartDate((prev) => getAdjacentWeek(prev, offset));
+  };
+
+  const handleToggleGroceryKey = (key: string) => {
+    setCheckedGroceryKeys((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
   const handleAddToPlan = async (
     recipeId: string,
     day: DayOfWeek,
@@ -301,7 +381,7 @@ export const App: React.FC = () => {
   ) => {
     const newItem: WeeklyPlanItem = {
       id: `plan-${day.toLowerCase()}-${Date.now()}`,
-      week_start_date: '2026-10-19',
+      week_start_date: activeWeekStartDate,
       recipe_id: recipeId,
       day_of_week: day,
       servings,
@@ -309,12 +389,15 @@ export const App: React.FC = () => {
     };
 
     setWeeklyPlan((prev) => {
-      const filtered = prev.filter((p) => p.day_of_week !== day);
+      const filtered = prev.filter(
+        (p) => !(p.day_of_week === day && (p.week_start_date || getMondayOfWeek()) === activeWeekStartDate)
+      );
       return [...filtered, newItem];
     });
 
     if (supaStatus.tablesReady) {
       await supabase.from('weekly_plan').upsert({
+        week_start_date: activeWeekStartDate,
         recipe_id: recipeId,
         day_of_week: day,
         servings,
@@ -323,19 +406,28 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleUpdatePlanServings = (planId: string, servings: ServingsSize) => {
+  const handleUpdatePlanServings = async (planId: string, servings: ServingsSize) => {
     setWeeklyPlan((prev) =>
       prev.map((p) => (p.id === planId ? { ...p, servings } : p))
     );
+    if (supaStatus.tablesReady) {
+      await supabase.from('weekly_plan').update({ servings }).eq('id', planId);
+    }
   };
 
-  const handleRemoveFromPlan = (planId: string) => {
+  const handleRemoveFromPlan = async (planId: string) => {
     setWeeklyPlan((prev) => prev.filter((p) => p.id !== planId));
+    if (supaStatus.tablesReady) {
+      await supabase.from('weekly_plan').delete().eq('id', planId);
+    }
   };
 
   const handleCompleteWeeklyPlan = async () => {
-    const plannedMeals = weeklyPlan.filter((p) => p.status !== 'completed');
-    const mealsToDeduct = plannedMeals.length > 0 ? plannedMeals : weeklyPlan;
+    const currentWeekMeals = weeklyPlan.filter(
+      (p) => (p.week_start_date || getMondayOfWeek()) === activeWeekStartDate
+    );
+    const plannedMeals = currentWeekMeals.filter((p) => p.status !== 'completed');
+    const mealsToDeduct = plannedMeals.length > 0 ? plannedMeals : currentWeekMeals;
 
     const { updatedCabinet, deductedNames } = deductCabinetForCompletedMeals(
       mealsToDeduct,
@@ -703,6 +795,8 @@ export const App: React.FC = () => {
             weeklyPlan={weeklyPlan}
             defaultServings={defaultServings}
             isDairyFree={isDairyFree}
+            activeWeekStartDate={activeWeekStartDate}
+            onNavigateWeek={handleNavigateWeek}
             onHandFridgeItems={onHandFridgeItems}
             onToggleFridgeItem={(item) => {
               setOnHandFridgeItems((prev) => {
@@ -755,7 +849,7 @@ export const App: React.FC = () => {
             onAddExtraToGrocery={async (itemName, aisle) => {
               const newEx: GroceryExtra = {
                 id: `extra-${Date.now()}-${Math.random()}`,
-                week_start_date: '2026-10-19',
+                week_start_date: activeWeekStartDate,
                 item_name: itemName,
                 aisle,
                 checked: false,
@@ -763,6 +857,7 @@ export const App: React.FC = () => {
               setExtras((prev) => [...prev, newEx]);
               if (supaStatus.tablesReady) {
                 await supabase.from('grocery_extras').insert({
+                  week_start_date: activeWeekStartDate,
                   item_name: itemName,
                   aisle,
                   checked: false,
@@ -785,12 +880,20 @@ export const App: React.FC = () => {
             extras={extras}
             isDairyFree={isDairyFree}
             defaultServings={defaultServings}
+            activeWeekStartDate={activeWeekStartDate}
+            onNavigateWeek={handleNavigateWeek}
+            activeFamilyMember={activeFamilyMember}
+            onChangeFamilyMember={setActiveFamilyMember}
+            valleriaEmail={valleriaEmail}
+            onSetValleriaEmail={setValleriaEmail}
             valleriaPhone={valleriaPhone}
             onSetValleriaPhone={setValleriaPhone}
+            checkedGroceryKeys={checkedGroceryKeys}
+            onToggleGroceryKey={handleToggleGroceryKey}
             onAddExtra={async (itemName, aisle) => {
               const newEx: GroceryExtra = {
                 id: `extra-${Date.now()}`,
-                week_start_date: '2026-10-19',
+                week_start_date: activeWeekStartDate,
                 item_name: itemName,
                 aisle,
                 checked: false,
@@ -798,22 +901,35 @@ export const App: React.FC = () => {
               setExtras((prev) => [...prev, newEx]);
               if (supaStatus.tablesReady) {
                 await supabase.from('grocery_extras').insert({
+                  week_start_date: activeWeekStartDate,
                   item_name: itemName,
                   aisle,
                   checked: false,
                 });
               }
             }}
-            onToggleExtra={(id) =>
+            onToggleExtra={async (id) => {
+              const target = extras.find((e) => e.id === id);
+              if (!target) return;
+              const nextChecked = !target.checked;
               setExtras((prev) =>
                 prev.map((e) =>
-                  e.id === id ? { ...e, checked: !e.checked } : e
+                  e.id === id ? { ...e, checked: nextChecked } : e
                 )
-              )
-            }
-            onDeleteExtra={(id) =>
-              setExtras((prev) => prev.filter((e) => e.id !== id))
-            }
+              );
+              if (supaStatus.tablesReady) {
+                await supabase
+                  .from('grocery_extras')
+                  .update({ checked: nextChecked })
+                  .eq('id', id);
+              }
+            }}
+            onDeleteExtra={async (id) => {
+              setExtras((prev) => prev.filter((e) => e.id !== id));
+              if (supaStatus.tablesReady) {
+                await supabase.from('grocery_extras').delete().eq('id', id);
+              }
+            }}
             onAddToPlan={handleAddToPlan}
             onRemoveFromPlan={handleRemoveFromPlan}
             onUpdatePlanServings={handleUpdatePlanServings}
@@ -832,7 +948,10 @@ export const App: React.FC = () => {
             onSelectVersion={(ver) => setCookingRecipeId(ver.id)}
             onSubmitFeedbackAndFork={handleSubmitFeedbackAndFork}
             onAddRecipeToGroceryList={(rec, serv) => {
-              const usedDays = new Set(weeklyPlan.map((p) => p.day_of_week));
+              const weekMeals = weeklyPlan.filter(
+                (p) => (p.week_start_date || getMondayOfWeek()) === activeWeekStartDate
+              );
+              const usedDays = new Set(weekMeals.map((p) => p.day_of_week));
               const availableDay =
                 DAYS_OF_WEEK.find((d) => !usedDays.has(d)) || 'Sunday';
               handleAddToPlan(rec.id, availableDay, serv);
@@ -928,17 +1047,23 @@ export const App: React.FC = () => {
         blendName={activeBlendModal}
         cabinet={cabinet}
         onClose={() => setActiveBlendModal(null)}
-        onAddExtraToGrocery={(itemName, aisle) => {
-          setExtras((prev) => [
-            ...prev,
-            {
-              id: `extra-${Date.now()}-${Math.random()}`,
-              week_start_date: '2026-10-19',
+        onAddExtraToGrocery={async (itemName, aisle) => {
+          const newEx: GroceryExtra = {
+            id: `extra-${Date.now()}-${Math.random()}`,
+            week_start_date: activeWeekStartDate,
+            item_name: itemName,
+            aisle,
+            checked: false,
+          };
+          setExtras((prev) => [...prev, newEx]);
+          if (supaStatus.tablesReady) {
+            await supabase.from('grocery_extras').insert({
+              week_start_date: activeWeekStartDate,
               item_name: itemName,
               aisle,
               checked: false,
-            },
-          ]);
+            });
+          }
           showToast(`🛒 Added ${itemName} to your Grocery List!`);
         }}
       />

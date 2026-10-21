@@ -98,3 +98,33 @@ export async function syncAllToSupabase(payload: {
     };
   }
 }
+
+/**
+ * Subscribes to Supabase Realtime changes across weekly_plan, cabinet, and grocery_extras.
+ * Calls onPayload whenever another device inserts/updates/deletes a row.
+ */
+export function subscribeToFamilyRealtime(onPayload: (table: string, payload: any) => void) {
+  const channel = supabase
+    .channel('family-sync-channel')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'weekly_plan' },
+      (payload) => onPayload('weekly_plan', payload)
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'cabinet' },
+      (payload) => onPayload('cabinet', payload)
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'grocery_extras' },
+      (payload) => onPayload('grocery_extras', payload)
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
