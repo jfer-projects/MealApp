@@ -193,23 +193,53 @@ export const App: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        fetchUserProfile(session.user.id, session.user.email || '').then((prof) => {
+    // Safety timeout: Never leave the user stuck on loading screen if network stalls
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) setAuthChecking(false);
+    }, 4000);
+
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          fetchUserProfile(session.user.id, session.user.email || '')
+            .then((prof) => {
+              if (isMounted) {
+                setCurrentUser(prof);
+                setAuthChecking(false);
+                clearTimeout(safetyTimer);
+              }
+            })
+            .catch((err) => {
+              console.error('Failed to fetch user profile:', err);
+              if (isMounted) {
+                setAuthChecking(false);
+                clearTimeout(safetyTimer);
+              }
+            });
+        } else {
           if (isMounted) {
-            setCurrentUser(prof);
             setAuthChecking(false);
+            clearTimeout(safetyTimer);
           }
-        });
-      } else {
-        if (isMounted) setAuthChecking(false);
-      }
-    });
+        }
+      })
+      .catch((err) => {
+        console.error('Session check error:', err);
+        if (isMounted) {
+          setAuthChecking(false);
+          clearTimeout(safetyTimer);
+        }
+      });
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
-        const prof = await fetchUserProfile(session.user.id, session.user.email || '');
-        if (isMounted) setCurrentUser(prof);
+        try {
+          const prof = await fetchUserProfile(session.user.id, session.user.email || '');
+          if (isMounted) setCurrentUser(prof);
+        } catch (err) {
+          console.error('Auth state change error:', err);
+        }
       } else {
         if (isMounted) setCurrentUser(null);
       }
@@ -217,6 +247,7 @@ export const App: React.FC = () => {
 
     return () => {
       isMounted = false;
+      clearTimeout(safetyTimer);
       authListener.subscription.unsubscribe();
     };
   }, []);
