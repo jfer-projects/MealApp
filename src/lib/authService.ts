@@ -227,6 +227,49 @@ export async function fetchUserProfile(userId: string, email: string): Promise<U
         };
       }
 
+      // If user is authenticated but has no household yet (e.g. signup occurred before email confirmation),
+      // auto-create a real private household with a unique invite code.
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        const userMeta = userData?.user?.user_metadata;
+        const displayName = userMeta?.display_name || email.split('@')[0] || 'My';
+        const newCode = generateInviteCode();
+        const kitchenName = `${displayName}'s Kitchen`;
+
+        const { data: newHousehold, error: hCreateErr } = await supabase
+          .from('households')
+          .insert({
+            name: kitchenName,
+            invite_code: newCode,
+            created_by: userId,
+          })
+          .select()
+          .single();
+
+        if (!hCreateErr && newHousehold) {
+          const { data: newMember } = await supabase
+            .from('household_members')
+            .insert({
+              household_id: newHousehold.id,
+              user_id: userId,
+              display_name: displayName,
+              role: 'owner',
+            })
+            .select()
+            .single();
+
+          return {
+            id: userId,
+            email,
+            display_name: displayName,
+            household: newHousehold as Household,
+            household_member: newMember as HouseholdMember,
+          };
+        }
+      } catch (autoCreateErr) {
+        console.warn('Auto-create household fallback error:', autoCreateErr);
+      }
+
       return {
         id: userId,
         email,

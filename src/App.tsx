@@ -156,7 +156,7 @@ export const App: React.FC = () => {
   const [activeBlendModal, setActiveBlendModal] = useState<string | null>(null);
   const [photoScannerState, setPhotoScannerState] = useState<{
     open: boolean;
-    mode: 'cabinet' | 'fridge';
+    mode: 'cabinet' | 'fridge' | 'freezer';
   }>({ open: false, mode: 'cabinet' });
 
   // Notification banner
@@ -743,7 +743,32 @@ export const App: React.FC = () => {
         .update({ status: 'in_stock', usage_count: 0 })
         .neq('status', 'in_stock');
     }
-    showToast('✅ All Spice & Pantry Cabinet items restocked to In-Stock!');
+    showToast('✅ All inventory items restocked to In-Stock!');
+  };
+
+  const handleDeleteCabinetItem = async (id: string) => {
+    const itemToDelete = cabinet.find((c) => c.id === id);
+    setCabinet((prev) => prev.filter((c) => c.id !== id));
+    if (supaStatus.tablesReady) {
+      try {
+        await supabase.from('cabinet').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Delete cabinet item error:', err);
+      }
+    }
+    showToast(`Removed "${itemToDelete?.item_name || 'Item'}" from inventory`);
+  };
+
+  const handleClearAllCabinetItems = async () => {
+    setCabinet([]);
+    if (supaStatus.tablesReady && currentUser?.household?.id) {
+      try {
+        await supabase.from('cabinet').delete().eq('household_id', currentUser.household.id);
+      } catch (err) {
+        console.warn('Clear cabinet error:', err);
+      }
+    }
+    showToast('Cleared inventory! You now have a clean slate for your kitchen.');
   };
 
   const handleSubmitFeedbackAndFork = async (
@@ -947,7 +972,7 @@ export const App: React.FC = () => {
               }`}
             >
               <Package className="w-4 h-4" />
-              Spice Cabinet
+              Kitchen Inventory
               {outOrLowCabinetCount > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-rose-600 text-white">
                   {outOrLowCabinetCount}
@@ -1112,6 +1137,8 @@ export const App: React.FC = () => {
           <CabinetView
             cabinet={cabinet}
             onUpdateStatus={handleUpdateCabinetStatus}
+            onDeleteItem={handleDeleteCabinetItem}
+            onClearAllItems={handleClearAllCabinetItems}
             onAddCabinetItem={handleAddCabinetItem}
             onRestockAllLowAndOut={handleRestockAllLowAndOut}
             onAddExtraToGrocery={async (itemName, aisle) => {
@@ -1134,10 +1161,10 @@ export const App: React.FC = () => {
                 if (currentUser?.id) payload.user_id = currentUser.id;
                 await supabase.from('grocery_extras').insert(payload);
               }
-              showToast(`🛒 Added "${itemName}" to Valleria's Grocery List!`);
+              showToast(`🛒 Added "${itemName}" to Grocery List!`);
             }}
-            onOpenPhotoScanner={() =>
-              setPhotoScannerState({ open: true, mode: 'cabinet' })
+            onOpenPhotoScanner={(mode) =>
+              setPhotoScannerState({ open: true, mode: mode || 'cabinet' })
             }
             onOpenBlendModal={(blendName) => setActiveBlendModal(blendName)}
           />
@@ -1264,7 +1291,7 @@ export const App: React.FC = () => {
           }`}
         >
           <Package className="w-5 h-5" />
-          <span className="text-[10px] mt-0.5">Cabinet</span>
+          <span className="text-[10px] mt-0.5">Inventory</span>
           {outOrLowCabinetCount > 0 && (
             <span className="absolute top-0.5 right-3 w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-black flex items-center justify-center">
               {outOrLowCabinetCount}

@@ -26,7 +26,7 @@ export async function fileToBase64(file: File): Promise<{ mimeType: string; data
  */
 export async function analyzePhotoWithGemini(
   file: File,
-  mode: 'cabinet' | 'fridge',
+  mode: 'cabinet' | 'fridge' | 'freezer',
   apiKey: string
 ): Promise<{ name: string; category: CabinetItem['category'] }[]> {
   if (!apiKey || !apiKey.trim()) {
@@ -35,14 +35,20 @@ export async function analyzePhotoWithGemini(
 
   const { mimeType, data: base64Data } = await fileToBase64(file);
 
-  const prompt =
-    mode === 'cabinet'
-      ? `Analyze this photo of a kitchen pantry or spice cabinet. Identify all visible spices, herbs, broth concentrates, sauces, oils, vinegars, and pantry staples.
+  let prompt = '';
+  if (mode === 'cabinet') {
+    prompt = `Analyze this photo of a kitchen pantry or spice cabinet. Identify all visible spices, herbs, broth concentrates, sauces, oils, vinegars, and pantry staples.
 Return ONLY a valid JSON array of objects with keys: "name" (clean English name, e.g. "Garlic Powder", "Smoked Paprika") and "category" (strictly one of: "Spices", "Sauces", "Broth Concentrates", "Oils & Vinegars", "Pantry").
-Do not include markdown code block quotes, just the raw JSON array.`
-      : `Analyze this photo of a refrigerator or food pantry. Identify all visible ingredients, proteins, produce, dairy, and food staples.
-Return ONLY a valid JSON array of objects with keys: "name" (clean ingredient name, e.g. "Chicken Breast", "Broccoli Florets", "Sour Cream") and "category" ("Pantry").
 Do not include markdown code block quotes, just the raw JSON array.`;
+  } else if (mode === 'freezer') {
+    prompt = `Analyze this photo of a kitchen freezer or deep freezer chest. Identify all visible frozen proteins, meats (chicken breasts, ground beef, pork chops, bacon, steaks), frozen seafood, frozen vegetables, and batch-cooked staples.
+Return ONLY a valid JSON array of objects with keys: "name" (clean ingredient name, e.g. "Chicken Breasts", "Ground Beef", "Frozen Broccoli") and "category" ("Freezer & Deep Freeze").
+Do not include markdown code block quotes, just the raw JSON array.`;
+  } else {
+    prompt = `Analyze this photo of a refrigerator or fresh produce drawer. Identify all visible fresh ingredients, proteins, produce, dairy, and opened food items.
+Return ONLY a valid JSON array of objects with keys: "name" (clean ingredient name, e.g. "Chicken Breast", "Broccoli Florets", "Sour Cream") and "category" ("Refrigerator").
+Do not include markdown code block quotes, just the raw JSON array.`;
+  }
 
   let lastError: any = null;
 
@@ -194,6 +200,8 @@ Do not wrap in markdown quotes. Just return the JSON.`;
 
 function normalizeCategory(cat: string): CabinetItem['category'] {
   const c = String(cat || '').toLowerCase();
+  if (c.includes('freez') || c.includes('deep')) return 'Freezer & Deep Freeze';
+  if (c.includes('fridge') || c.includes('refrigerat') || c.includes('dairy') || c.includes('produce')) return 'Refrigerator';
   if (c.includes('sauce')) return 'Sauces';
   if (c.includes('broth') || c.includes('concentrate') || c.includes('stock')) return 'Broth Concentrates';
   if (c.includes('oil') || c.includes('vinegar')) return 'Oils & Vinegars';

@@ -77,30 +77,33 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const inviteCode = household?.invite_code || 'FRESH-DEMO';
-  const inviteUrl = typeof window !== 'undefined'
+  const inviteCode = household?.invite_code || '';
+  const inviteUrl = typeof window !== 'undefined' && inviteCode
     ? `${window.location.origin}/?join=${inviteCode}`
-    : `https://freshdiy.netlify.app/?join=${inviteCode}`;
+    : '';
 
   const handleCopyCode = () => {
+    if (!inviteCode) return;
     navigator.clipboard.writeText(inviteCode);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
   const handleCopyLink = () => {
+    if (!inviteUrl) return;
     navigator.clipboard.writeText(inviteUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
   const handleNativeShare = async () => {
+    if (!inviteCode) return;
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `Join ${household?.name || 'our Family Kitchen'} on FreshDIY!`,
-          text: `Hey! Join our private FreshDIY kitchen so we can plan meals and sync our grocery list together. Use code: ${inviteCode}`,
-          url: inviteUrl,
+          title: `Join ${household?.name || 'our Kitchen'} on FreshDIY!`,
+          text: `Join our private kitchen on FreshDIY to plan meals and sync grocery lists together. Use invite code: ${inviteCode}`,
+          url: inviteUrl || undefined,
         });
       } catch {
         handleCopyLink();
@@ -209,42 +212,46 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
             <div className="mt-4 pt-4 border-t border-emerald-200/60">
               <label className="block text-[11px] font-bold text-emerald-900 mb-1.5 flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-emerald-700" />
-                Shareable Family Invite Code (for Valleria or Friends)
+                Shareable Household Invite Code
               </label>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <div className="flex-1 bg-white border border-emerald-300 rounded-xl px-3.5 py-2 font-mono text-sm font-black text-emerald-800 tracking-wider text-center sm:text-left flex items-center justify-between">
-                  <span>{inviteCode}</span>
-                  <button
-                    onClick={handleCopyCode}
-                    className="ml-2 text-xs font-sans font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer inline-flex items-center gap-1"
-                  >
-                    {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copiedCode ? 'Copied' : 'Copy'}
-                  </button>
+                  <span>{inviteCode || 'Setting up household...'}</span>
+                  {inviteCode && (
+                    <button
+                      onClick={handleCopyCode}
+                      className="ml-2 text-xs font-sans font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer inline-flex items-center gap-1"
+                    >
+                      {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedCode ? 'Copied' : 'Copy'}
+                    </button>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleCopyLink}
-                    className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs transition cursor-pointer"
-                  >
-                    {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedLink ? 'Link Copied!' : 'Copy Link'}</span>
-                  </button>
+                {inviteCode && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCopyLink}
+                      className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-xs transition cursor-pointer"
+                    >
+                      {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedLink ? 'Link Copied!' : 'Copy Link'}</span>
+                    </button>
 
-                  <button
-                    onClick={handleNativeShare}
-                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
-                    title="Share with partner via WhatsApp / Messages / Email"
-                  >
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>Share</span>
-                  </button>
-                </div>
+                    <button
+                      onClick={handleNativeShare}
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
+                      title="Share invite code with family or housemates"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>Share</span>
+                    </button>
+                  </div>
+                )}
               </div>
               <p className="text-[10px] text-emerald-700/80 mt-1.5">
-                💡 Valleria or a friend can open that link or paste this code when signing up to link accounts.
+                💡 Anyone you share this code or link with can enter it when signing up to link to your household kitchen.
               </p>
             </div>
           </div>

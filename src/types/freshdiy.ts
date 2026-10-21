@@ -78,12 +78,21 @@ export interface RecipeFeedback {
   created_at: string;
 }
 
+export type InventoryCategory =
+  | 'Spices'
+  | 'Broth Concentrates'
+  | 'Sauces'
+  | 'Oils & Vinegars'
+  | 'Pantry'
+  | 'Refrigerator'
+  | 'Freezer & Deep Freeze';
+
 export interface CabinetItem {
   id: string;
   user_id?: string | null;
   household_id?: string | null;
   item_name: string;
-  category: 'Spices' | 'Broth Concentrates' | 'Sauces' | 'Oils & Vinegars' | 'Pantry';
+  category: InventoryCategory;
   status: StockStatus;
   usage_count: number;
   updated_at?: string;

@@ -10,6 +10,7 @@ import {
   PackagePlus,
   Plus,
   Refrigerator,
+  Snowflake,
   Sparkles,
   Trash2,
   Upload,
@@ -20,7 +21,7 @@ import { analyzePhotoWithGemini } from '../utils/geminiClient';
 
 interface PhotoScannerModalProps {
   isOpen: boolean;
-  initialMode: 'cabinet' | 'fridge';
+  initialMode: 'cabinet' | 'fridge' | 'freezer';
   geminiApiKey?: string;
   onOpenFamilySettings?: () => void;
   onClose: () => void;
@@ -46,7 +47,7 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
   onImportToCabinet,
   onImportToFridge,
 }) => {
-  const [scanMode, setScanMode] = useState<'cabinet' | 'fridge'>(initialMode);
+  const [scanMode, setScanMode] = useState<'cabinet' | 'fridge' | 'freezer'>(initialMode);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -121,8 +122,15 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
       onImportToCabinet(
         selectedItems.map((i) => ({ name: i.name, category: i.category }))
       );
+    } else if (scanMode === 'freezer') {
+      onImportToCabinet(
+        selectedItems.map((i) => ({ name: i.name, category: 'Freezer & Deep Freeze' }))
+      );
     } else {
       onImportToFridge(selectedItems.map((i) => i.name));
+      onImportToCabinet(
+        selectedItems.map((i) => ({ name: i.name, category: 'Refrigerator' }))
+      );
     }
     onClose();
   };
@@ -205,22 +213,22 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
           </div>
         )}
 
-        {/* Mode Switcher: Spice Cabinet vs Fridge/Pantry */}
-        <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1.5 rounded-2xl">
+        {/* Mode Switcher: Spice Cabinet vs Fridge vs Deep Freezer */}
+        <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1.5 rounded-2xl">
           <button
             type="button"
             onClick={() => {
               setScanMode('cabinet');
               setDetected([]);
             }}
-            className={`py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+            className={`py-2 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1 transition cursor-pointer ${
               scanMode === 'cabinet'
                 ? 'bg-white text-emerald-700 shadow-xs'
                 : 'text-slate-600'
             }`}
           >
-            <PackagePlus className="w-4 h-4" />
-            Spice Cabinet
+            <PackagePlus className="w-3.5 h-3.5" />
+            <span className="truncate">Spices</span>
           </button>
           <button
             type="button"
@@ -228,14 +236,29 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
               setScanMode('fridge');
               setDetected([]);
             }}
-            className={`py-2.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+            className={`py-2 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1 transition cursor-pointer ${
               scanMode === 'fridge'
-                ? 'bg-white text-emerald-700 shadow-xs'
+                ? 'bg-white text-blue-700 shadow-xs'
                 : 'text-slate-600'
             }`}
           >
-            <Refrigerator className="w-4 h-4" />
-            Fridge &amp; Produce
+            <Refrigerator className="w-3.5 h-3.5" />
+            <span className="truncate">Fridge</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setScanMode('freezer');
+              setDetected([]);
+            }}
+            className={`py-2 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1 transition cursor-pointer ${
+              scanMode === 'freezer'
+                ? 'bg-white text-cyan-700 shadow-xs'
+                : 'text-slate-600'
+            }`}
+          >
+            <Snowflake className="w-3.5 h-3.5" />
+            <span className="truncate">Freezer</span>
           </button>
         </div>
 
