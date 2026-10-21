@@ -190,12 +190,8 @@ export const App: React.FC = () => {
   const [isFamilyModalOpen, setIsFamilyModalOpen] = useState<boolean>(false);
 
   // Household Settings (Gemini Key & Cost Benchmarks)
-  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => {
-    return localStorage.getItem('freshdiy_gemini_api_key_v1') || '';
-  });
-  const [geminiKeyAuthorId, setGeminiKeyAuthorId] = useState<string | null>(() => {
-    return localStorage.getItem('freshdiy_gemini_key_author_v1') || null;
-  });
+  const [geminiApiKey, setGeminiApiKey] = useState<string>('');
+  const [geminiKeyAuthorId, setGeminiKeyAuthorId] = useState<string | null>(null);
   const [hellofreshPrice, setHellofreshPrice] = useState<number>(() => {
     const saved = localStorage.getItem('freshdiy_hf_price_v1');
     return saved ? parseFloat(saved) : 11.49;
@@ -284,7 +280,11 @@ export const App: React.FC = () => {
           console.error('Auth state change error:', err);
         }
       } else {
-        if (isMounted) setCurrentUser(null);
+        if (isMounted) {
+          setCurrentUser(null);
+          setGeminiApiKey('');
+          setGeminiKeyAuthorId(null);
+        }
       }
     });
 
@@ -295,10 +295,22 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Sync Household Settings & Ratings from Supabase
+  // Sync Household Settings & Ratings from Supabase (Strictly Scoped to Current Household)
   useEffect(() => {
-    if (!currentUser?.household?.id || !supaStatus.tablesReady) return;
+    if (!currentUser?.household?.id) {
+      // Standalone demo user or signed out — load local demo key if exists
+      const fallbackKey = localStorage.getItem('freshdiy_gemini_api_key_v1') || '';
+      setGeminiApiKey(fallbackKey);
+      return;
+    }
+    if (!supaStatus.tablesReady) return;
     const hId = currentUser.household.id;
+
+    // Load household-scoped cached key first
+    const cachedKey = localStorage.getItem(`freshdiy_gemini_api_key_${hId}`);
+    const cachedAuthor = localStorage.getItem(`freshdiy_gemini_key_author_${hId}`);
+    if (cachedKey) setGeminiApiKey(cachedKey);
+    if (cachedAuthor) setGeminiKeyAuthorId(cachedAuthor);
 
     supabase
       .from('household_settings')
@@ -309,16 +321,27 @@ export const App: React.FC = () => {
         if (data) {
           if (data.gemini_api_key) {
             setGeminiApiKey(data.gemini_api_key);
-            localStorage.setItem('freshdiy_gemini_api_key_v1', data.gemini_api_key);
+            localStorage.setItem(`freshdiy_gemini_api_key_${hId}`, data.gemini_api_key);
+          } else {
+            setGeminiApiKey('');
+            localStorage.removeItem(`freshdiy_gemini_api_key_${hId}`);
           }
           if (data.gemini_api_key_set_by) {
             setGeminiKeyAuthorId(data.gemini_api_key_set_by);
-            localStorage.setItem('freshdiy_gemini_key_author_v1', data.gemini_api_key_set_by);
+            localStorage.setItem(`freshdiy_gemini_key_author_${hId}`, data.gemini_api_key_set_by);
+          } else {
+            setGeminiKeyAuthorId(null);
+            localStorage.removeItem(`freshdiy_gemini_key_author_${hId}`);
           }
           if (data.hellofresh_price_per_serving) {
             setHellofreshPrice(Number(data.hellofresh_price_per_serving));
             localStorage.setItem('freshdiy_hf_price_v1', String(data.hellofresh_price_per_serving));
           }
+        } else {
+          // No settings row for this household yet
+          setGeminiApiKey('');
+          setGeminiKeyAuthorId(null);
+          localStorage.removeItem(`freshdiy_gemini_api_key_${hId}`);
         }
       });
 
@@ -1921,9 +1944,17 @@ export const App: React.FC = () => {
         onUpdateGeminiApiKey={(k) => {
           setGeminiApiKey(k);
           setGeminiKeyAuthorId(currentUser?.id || null);
-          localStorage.setItem('freshdiy_gemini_api_key_v1', k);
-          if (currentUser?.id) {
-            localStorage.setItem('freshdiy_gemini_key_author_v1', currentUser.id);
+          const hId = currentUser?.household?.id;
+          const storageKey = hId
+            ? `freshdiy_gemini_api_key_${hId}`
+            : 'freshdiy_gemini_api_key_v1';
+          if (k) {
+            localStorage.setItem(storageKey, k);
+            if (currentUser?.id) {
+              localStorage.setItem(`freshdiy_gemini_key_author_${hId || 'default'}`, currentUser.id);
+            }
+          } else {
+            localStorage.removeItem(storageKey);
           }
           if (currentUser?.household?.id) {
             supabase
@@ -1985,9 +2016,17 @@ export const App: React.FC = () => {
         onUpdateGeminiApiKey={(k) => {
           setGeminiApiKey(k);
           setGeminiKeyAuthorId(currentUser?.id || null);
-          localStorage.setItem('freshdiy_gemini_api_key_v1', k);
-          if (currentUser?.id) {
-            localStorage.setItem('freshdiy_gemini_key_author_v1', currentUser.id);
+          const hId = currentUser?.household?.id;
+          const storageKey = hId
+            ? `freshdiy_gemini_api_key_${hId}`
+            : 'freshdiy_gemini_api_key_v1';
+          if (k) {
+            localStorage.setItem(storageKey, k);
+            if (currentUser?.id) {
+              localStorage.setItem(`freshdiy_gemini_key_author_${hId || 'default'}`, currentUser.id);
+            }
+          } else {
+            localStorage.removeItem(storageKey);
           }
         }}
         hellofreshPrice={hellofreshPrice}
@@ -1998,6 +2037,8 @@ export const App: React.FC = () => {
         onProfileUpdated={(updated) => setCurrentUser(updated)}
         onSignOut={() => {
           setCurrentUser(null);
+          setGeminiApiKey('');
+          setGeminiKeyAuthorId(null);
           showToast('Signed out of FreshDIY.');
         }}
       />

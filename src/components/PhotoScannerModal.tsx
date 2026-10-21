@@ -224,7 +224,7 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
               )}
             </div>
             <p className="text-[11px] text-indigo-900 leading-relaxed">
-              Enter your own Gemini API key to recognize ingredients from camera photos. Saved privately on this device.
+              Enter your own Gemini API key to recognize ingredients from camera photos. Private to your household only — never shared with outside users.
             </p>
             <div className="flex items-center gap-2">
               <input

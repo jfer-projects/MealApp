@@ -328,7 +328,7 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
                     </button>
                   </div>
                   <p className="text-[10px] text-slate-500 mt-1">
-                    Powers photo scanning &amp; recipe AI customization. Stored safely for your family only.
+                    Powers photo scanning &amp; recipe AI customization. Private to your household only — never shared with outside accounts.
                   </p>
                 </div>
               )}
