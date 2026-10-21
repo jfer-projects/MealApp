@@ -289,12 +289,12 @@ export function formatGroceryListForValleria(
 
   const uncheckedExtras = extras.filter((e) => !e.checked);
   if (uncheckedExtras.length > 0) {
-    const extraAisle = 'Household & Extras';
-    const list = byAisle.get(extraAisle) || [];
     for (const ex of uncheckedExtras) {
-      list.push(`• ${ex.item_name}`);
+      const targetAisle = ex.aisle || 'Household & Extras';
+      const list = byAisle.get(targetAisle) || [];
+      list.push(`• ${ex.item_name}${ex.is_recurring ? ' 📌' : ''}`);
+      byAisle.set(targetAisle, list);
     }
-    byAisle.set(extraAisle, list);
   }
 
   const sortedAisles = Array.from(byAisle.keys()).sort(sortAisles);
@@ -435,4 +435,133 @@ export function deductCabinetForCompletedMeals(
     updatedCabinet,
     deductedNames,
   };
+}
+
+export interface ParsedNoteGroceryItem {
+  id: string;
+  itemName: string;
+  aisle: string;
+  isRecurring: boolean;
+}
+
+/**
+ * Automatically classifies a free-text shopping list item into the best store aisle.
+ */
+export function guessGroceryAisle(rawName: string): string {
+  const s = rawName.toLowerCase();
+
+  // Meat & Seafood
+  if (
+    /\b(chicken|turkey|beef|steak|pork|bacon|sausage|salmon|shrimp|fish|tilapia|cod|lamb|ham|meatball|ground|chop|fillet|tenderloin|brisket|ribs|wings|thighs|breast)\b/.test(
+      s
+    )
+  ) {
+    return 'Meat & Seafood';
+  }
+
+  // Dairy Alternatives
+  if (
+    /\b(oat milk|almond milk|soy milk|coconut milk|plant butter|vegan|dairy-free|dairy free|nutritional yeast|violife|miyoko|kite hill|silk|oatly|df )\b/.test(
+      s
+    )
+  ) {
+    return 'Dairy Alternatives';
+  }
+
+  // Dairy & Eggs
+  if (
+    /\b(eggs?|egg whites|milk|butter|cheese|cheddar|mozzarella|parmesan|yogurt|sour cream|cream cheese|heavy cream|half and half|creamer|cottage cheese)\b/.test(
+      s
+    )
+  ) {
+    return 'Dairy & Eggs';
+  }
+
+  // Produce
+  if (
+    /\b(apples?|bananas?|berries|strawberr|blueberr|raspberr|blackberr|grapes|oranges?|lemons?|limes?|avocados?|tomato|tomatoes|potato|potatoes|onion|scallion|shallot|garlic|ginger|carrot|broccoli|spinach|lettuce|kale|salad|greens|cucumber|zucchini|squash|pepper|jalapeno|cilantro|parsley|basil|mint|dill|rosemary|thyme|celery|mushroom|corn|cabbage|asparagus|green beans|peas| cauliflower|peach|pear|melon|watermelon|mango|pineapple)\b/.test(
+      s
+    )
+  ) {
+    return 'Produce';
+  }
+
+  // Grains & Bakery
+  if (
+    /\b(bread|sourdough|bagel|buns?|rolls?|tortilla|wrap|pita|flatbread|naan|croissant|muffin|pasta|spaghetti|penne|macaroni|noodle|ramen|orzo|rice|quinoa|oats|oatmeal|cereal|granola|crackers?|chips|pretzels?|flour|pancake|waffle)\b/.test(
+      s
+    )
+  ) {
+    return 'Grains & Bakery';
+  }
+
+  // Spices & Pantry
+  if (
+    /\b(oil|olive oil|vinegar|soy sauce|tamari|hot sauce|sriracha|ketchup|mustard|mayo|mayonnaise|bbq|sauce|salsa|honey|maple syrup|sugar|salt|pepper|paprika|cumin|oregano|cinnamon|chili|garlic powder|onion powder|seasoning|spice|stock|broth|bouillon|beans|black beans|chickpeas|lentils|canned|tuna|peanut butter|almond butter|jam|jelly)\b/.test(
+      s
+    )
+  ) {
+    return 'Spices & Pantry';
+  }
+
+  return 'Household & Extras';
+}
+
+/**
+ * Parses a pasted shopping list from Apple Notes, Google Keep, SMS, or plain text.
+ * Supports newline-separated or comma-separated lists, stripping bullets, checkboxes, and numbering.
+ */
+export function parsePastedShoppingList(rawText: string): ParsedNoteGroceryItem[] {
+  if (!rawText || !rawText.trim()) return [];
+
+  // Split by newlines first; if only 1 line and it contains commas, split by commas
+  let rawLines = rawText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (rawLines.length === 1 && rawLines[0].includes(',')) {
+    rawLines = rawLines[0]
+      .split(',')
+      .map((l) => l.trim())
+      .filter(Boolean);
+  }
+
+  const results: ParsedNoteGroceryItem[] = [];
+  const seenLower = new Set<string>();
+
+  for (let i = 0; i < rawLines.length; i++) {
+    let cleaned = rawLines[i]
+      // Strip leading checkboxes, bullets, dashes, stars, emojis, or numbers like "1.", "2)", "- [ ]"
+      .replace(/^(\s*[-*•◦▪▫‣⁃]\s*|\s*\[[ xX✓✔]?\]\s*|\s*[☐☑✓✔]\s*|\s*\d+[.)]\s*)+/, '')
+      .trim();
+
+    if (!cleaned) continue;
+
+    // Skip obvious section headers like "Grocery List:", "Produce:", "Store:", "---"
+    if (
+      /^[-=_*]{2,}$/.test(cleaned) ||
+      /^(grocery list|shopping list|groceries|to buy|store|notes?):?$/i.test(cleaned)
+    ) {
+      continue;
+    }
+
+    // If a line ends with a colon like "Produce:", skip it as a header
+    if (cleaned.endsWith(':') && cleaned.length < 24) {
+      continue;
+    }
+
+    const key = cleaned.toLowerCase();
+    if (seenLower.has(key)) continue;
+    seenLower.add(key);
+
+    results.push({
+      id: `parsed-${i}-${Date.now()}`,
+      itemName: cleaned,
+      aisle: guessGroceryAisle(cleaned),
+      isRecurring: false,
+    });
+  }
+
+  return results;
 }

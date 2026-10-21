@@ -5,21 +5,20 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ClipboardPaste,
   Copy,
   DollarSign,
   Heart,
   Mail,
-  MessageSquareShare,
   Plus,
   Search,
-  Send,
   Share2,
   ShoppingBag,
   Sparkles,
   Trash2,
   User,
-  Users,
   Utensils,
+  X,
 } from 'lucide-react';
 import {
   CabinetItem,
@@ -36,12 +35,24 @@ import { formatWeekRange } from '../utils/dateUtils';
 import {
   buildAggregatedGroceryList,
   formatGroceryListForValleria,
+  ParsedNoteGroceryItem,
+  parsePastedShoppingList,
   sortAisles,
 } from '../utils/groceryEngine';
 import {
   computeWeeklySavings,
   estimateRecipeNutrition,
 } from '../utils/nutritionCostEngine';
+
+const AISLE_OPTIONS = [
+  'Produce',
+  'Meat & Seafood',
+  'Dairy Alternatives',
+  'Dairy & Eggs',
+  'Grains & Bakery',
+  'Spices & Pantry',
+  'Household & Extras',
+];
 
 interface GroceryViewProps {
   weeklyPlan: WeeklyPlanItem[];
@@ -122,7 +133,59 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
   const [recipeSearch, setRecipeSearch] = useState('');
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [showSmsPreview, setShowSmsPreview] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
+
+  // Paste Shopping List from Shared Note Modal State
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [pastedText, setPastedText] = useState('');
+  const [parsedNoteItems, setParsedNoteItems] = useState<ParsedNoteGroceryItem[]>([]);
+
+  const handlePasteTextChange = (text: string) => {
+    setPastedText(text);
+    setParsedNoteItems(parsePastedShoppingList(text));
+  };
+
+  const handleReadFromClipboard = async () => {
+    try {
+      const clipText = await navigator.clipboard.readText();
+      if (clipText) {
+        handlePasteTextChange(clipText);
+      }
+    } catch {
+      // User can still Ctrl+V / long-press Paste inside the textarea
+    }
+  };
+
+  const handleImportParsedToGrocery = () => {
+    if (parsedNoteItems.length === 0) return;
+    for (const item of parsedNoteItems) {
+      onAddExtra(item.itemName, item.aisle, item.isRecurring);
+    }
+    setShareFeedback(
+      `📋 Imported ${parsedNoteItems.length} item${
+        parsedNoteItems.length === 1 ? '' : 's'
+      } from your note into this week's Grocery List!`
+    );
+    setTimeout(() => setShareFeedback(null), 4000);
+    setPastedText('');
+    setParsedNoteItems([]);
+    setIsPasteModalOpen(false);
+  };
+
+  const handleImportParsedToInventory = () => {
+    if (parsedNoteItems.length === 0 || !onMarkItemInInventory) return;
+    for (const item of parsedNoteItems) {
+      onMarkItemInInventory(item.itemName, item.aisle);
+    }
+    setShareFeedback(
+      `📋 Added ${parsedNoteItems.length} item${
+        parsedNoteItems.length === 1 ? '' : 's'
+      } from your note directly into Kitchen Inventory!`
+    );
+    setTimeout(() => setShareFeedback(null), 4000);
+    setPastedText('');
+    setParsedNoteItems([]);
+    setIsPasteModalOpen(false);
+  };
 
   // Filter weekly plan items for the active week
   const currentWeekPlan = useMemo(
@@ -145,15 +208,35 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
     [currentWeekPlan, recipes, cabinet, isDairyFree]
   );
 
-  const groupedByAisle = useMemo(() => {
-    const groups = new Map<string, typeof aggregated>();
+  // Group BOTH recipe ingredients AND manual/pasted extras by aisle
+  const combinedAisles = useMemo(() => {
+    const aisleSet = new Set<string>();
+    const recipeMap = new Map<string, typeof aggregated>();
+    const extraMap = new Map<string, GroceryExtra[]>();
+
     for (const item of aggregated) {
-      const list = groups.get(item.aisle) || [];
+      aisleSet.add(item.aisle);
+      const list = recipeMap.get(item.aisle) || [];
       list.push(item);
-      groups.set(item.aisle, list);
+      recipeMap.set(item.aisle, list);
     }
-    return Array.from(groups.entries()).sort(([a], [b]) => sortAisles(a, b));
-  }, [aggregated]);
+
+    for (const ex of currentWeekExtras) {
+      const targetAisle = ex.aisle || 'Household & Extras';
+      aisleSet.add(targetAisle);
+      const list = extraMap.get(targetAisle) || [];
+      list.push(ex);
+      extraMap.set(targetAisle, list);
+    }
+
+    return Array.from(aisleSet)
+      .sort(sortAisles)
+      .map((aisle) => ({
+        aisle,
+        recipeItems: recipeMap.get(aisle) || [],
+        extraItems: extraMap.get(aisle) || [],
+      }));
+  }, [aggregated, currentWeekExtras]);
 
   const smsText = useMemo(
     () => formatGroceryListForValleria(aggregated, currentWeekExtras, isDairyFree, false),
@@ -331,6 +414,17 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
               Valleria
             </button>
           </div>
+
+          {/* Paste List from Shared Note Button */}
+          <button
+            type="button"
+            onClick={() => setIsPasteModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 text-xs font-extrabold border border-amber-300 transition cursor-pointer"
+            title="Copy & paste a shopping list from Apple Notes, Google Keep, or a text message"
+          >
+            <ClipboardPaste className="w-3.5 h-3.5 text-amber-800" />
+            📋 Paste List from Notes
+          </button>
 
           {/* Free Email / Share Sheet Triggers */}
           <button
@@ -570,13 +664,23 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
 
         {/* Manual Family Items for This Week */}
         <section className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
-          <div>
-            <h3 className="text-sm font-black text-slate-900">
-              Household Essentials &amp; Weekly Extras
-            </h3>
-            <p className="text-xs text-slate-500">
-              Add everyday items for {formatWeekRange(activeWeekStartDate)}.
-            </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900">
+                Household Essentials &amp; Weekly Extras
+              </h3>
+              <p className="text-xs text-slate-500">
+                Add everyday items or paste a list from a shared note for {formatWeekRange(activeWeekStartDate)}.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsPasteModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-2xs transition cursor-pointer shrink-0"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5" />
+              📋 Paste Note List
+            </button>
           </div>
 
           <form
@@ -713,20 +817,28 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
         </section>
       </div>
 
-      {/* 4. AISLE-SORTED AGGREGATED RECIPE INGREDIENTS */}
-      {currentWeekPlan.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-2">
+      {/* 4. AISLE-SORTED AGGREGATED RECIPE INGREDIENTS & PASTED NOTE ITEMS */}
+      {combinedAisles.length === 0 ? (
+        <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
           <ShoppingBag className="w-10 h-10 text-slate-300 mx-auto" />
           <h3 className="text-base font-bold text-slate-800">
-            No Meals Scheduled for {formatWeekRange(activeWeekStartDate)}
+            No Items on Your List for {formatWeekRange(activeWeekStartDate)} Yet
           </h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Use the search box above or the Planner tab to schedule recipes for this week!
+            Schedule recipes in the Planner tab, or click below to copy &amp; paste a shopping list from a shared note!
           </p>
+          <button
+            type="button"
+            onClick={() => setIsPasteModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer"
+          >
+            <ClipboardPaste className="w-4 h-4" />
+            📋 Paste Shopping List from Notes
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-          {groupedByAisle.map(([aisle, items]) => (
+          {combinedAisles.map(({ aisle, recipeItems, extraItems }) => (
             <div
               key={aisle}
               className={`rounded-3xl border p-4 sm:p-5 bg-white shadow-xs space-y-3 ${
@@ -747,12 +859,82 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                   )}
                 </div>
                 <span className="text-xs font-semibold text-slate-400">
-                  {items.length} items
+                  {recipeItems.length + extraItems.length} items
                 </span>
               </div>
 
               <div className="space-y-2">
-                {items.map((item) => {
+                {/* Pasted Note & Manual Extra Items in this Aisle */}
+                {extraItems.map((ex) => (
+                  <div
+                    key={ex.id}
+                    onClick={() => onToggleExtra(ex.id)}
+                    className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-3 ${
+                      ex.checked
+                        ? 'bg-slate-50 border-slate-200/70 opacity-60'
+                        : 'bg-emerald-50/30 border-emerald-200 hover:bg-emerald-50/60'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div
+                        className={`mt-0.5 w-4 h-4 rounded-md flex items-center justify-center ${
+                          ex.checked
+                            ? 'bg-emerald-600 text-white'
+                            : 'border border-slate-300 bg-white'
+                        }`}
+                      >
+                        {ex.checked && <Check className="w-3 h-3" />}
+                      </div>
+
+                      <div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span
+                            className={`text-sm font-bold ${
+                              ex.checked
+                                ? 'line-through text-slate-400'
+                                : 'text-slate-900'
+                            }`}
+                          >
+                            {ex.item_name}
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded-md text-[10px] font-black bg-slate-100 text-slate-600">
+                            {ex.is_recurring ? '📌 Weekly Staple' : 'Added / Note'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {onMarkItemInInventory && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMarkItemInInventory(ex.item_name, ex.aisle);
+                          }}
+                          className="px-2 py-1 rounded-xl bg-white hover:bg-emerald-100 border border-slate-200 text-slate-600 hover:text-emerald-900 text-[10px] font-extrabold transition cursor-pointer"
+                          title="Add to Kitchen Inventory"
+                        >
+                          ✓ In Stock
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteExtra(ex.id);
+                        }}
+                        className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                        title="Remove item"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Recipe-Derived Items in this Aisle */}
+                {recipeItems.map((item) => {
                   const isChecked = Boolean(checkedGroceryKeys[item.key]);
                   const isCrossed = item.isStruckByCabinet || isChecked;
                   const matchedBlend = findBlendDefinition(
@@ -845,6 +1027,189 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 📋 PASTE SHOPPING LIST FROM SHARED NOTE MODAL */}
+      {isPasteModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setIsPasteModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-t-3xl sm:rounded-3xl border border-slate-200 max-w-xl w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
+                  <ClipboardPaste className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">
+                    Paste Shopping List from Shared Note
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Paste any list from Apple Notes, Google Keep, or texts — we&apos;ll clean bullets and auto-sort every item by grocery aisle.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPasteModalOpen(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700">
+                  Paste Your List (1 item per line or comma-separated)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleReadFromClipboard}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-extrabold border border-emerald-200 cursor-pointer"
+                >
+                  <ClipboardPaste className="w-3 h-3" /> Read from Clipboard
+                </button>
+              </div>
+              <textarea
+                rows={5}
+                autoFocus
+                value={pastedText}
+                onChange={(e) => handlePasteTextChange(e.target.value)}
+                placeholder={`Example:\n- 2 cartons Oat milk\n- Ground turkey (2 packs)\n- Honeycrisp apples\n- Avocados x4\n- Sourdough bread\n- Paper towels`}
+                className="w-full p-3.5 rounded-2xl border border-slate-300 text-xs sm:text-sm font-mono focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+              />
+            </div>
+
+            {/* Live Parsed Items & Auto-Sorted Aisles Preview */}
+            {parsedNoteItems.length > 0 && (
+              <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-800">
+                    Ready to Import ({parsedNoteItems.length} item
+                    {parsedNoteItems.length === 1 ? '' : 's'} detected)
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    Adjust aisle or pin as staple if needed
+                  </span>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+                  {parsedNoteItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={item.itemName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setParsedNoteItems((prev) =>
+                            prev.map((p) =>
+                              p.id === item.id ? { ...p, itemName: val } : p
+                            )
+                          );
+                        }}
+                        className="flex-1 min-w-[140px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-900"
+                      />
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <select
+                          value={item.aisle}
+                          onChange={(e) => {
+                            const nextAisle = e.target.value;
+                            setParsedNoteItems((prev) =>
+                              prev.map((p) =>
+                                p.id === item.id ? { ...p, aisle: nextAisle } : p
+                              )
+                            );
+                          }}
+                          className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-700"
+                        >
+                          {AISLE_OPTIONS.map((a) => (
+                            <option key={a} value={a}>
+                              {a}
+                            </option>
+                          ))}
+                        </select>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setParsedNoteItems((prev) =>
+                              prev.map((p) =>
+                                p.id === item.id
+                                  ? { ...p, isRecurring: !p.isRecurring }
+                                  : p
+                              )
+                            )
+                          }
+                          className={`px-2 py-1 rounded-lg text-[10px] font-extrabold border transition cursor-pointer ${
+                            item.isRecurring
+                              ? 'bg-amber-200 border-amber-300 text-amber-950'
+                              : 'bg-white border-slate-200 text-slate-500'
+                          }`}
+                          title="Pin as recurring weekly staple"
+                        >
+                          📌 {item.isRecurring ? 'Staple' : 'Once'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setParsedNoteItems((prev) =>
+                              prev.filter((p) => p.id !== item.id)
+                            )
+                          }
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-600 cursor-pointer"
+                          title="Remove line"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsPasteModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              {onMarkItemInInventory && parsedNoteItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleImportParsedToInventory}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition cursor-pointer"
+                  title="Already bought these? Add all directly to your Kitchen Inventory"
+                >
+                  Add {parsedNoteItems.length} to Kitchen Inventory
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={parsedNoteItems.length === 0}
+                onClick={handleImportParsedToGrocery}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                + Add {parsedNoteItems.length || ''} Item
+                {parsedNoteItems.length === 1 ? '' : 's'} to Grocery List
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
