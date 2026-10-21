@@ -36,8 +36,8 @@
 - **AI Camera Photo Scanner**:
   - Point your phone camera at a spice rack, refrigerator shelf, or deep freezer chest.
   - Google Gemini Vision AI identifies visible items and auto-imports them with categories and quantities.
-  - **Shared Household Key & Privacy Protection**: When you add a Gemini API key for your family, all household members (e.g. Valleria) automatically have full access to photo scanning and AI features without needing their own key. For security, the secret API key string is masked and protected from non-author family members.
-  - **Custom Key for Friends**: Anyone using the app for their own household can add their own free Google Gemini API key right inside the Camera scanner or in Family Settings.
+  - **Shared Household Key & Privacy Protection**: When an admin adds a Gemini API key for their household, all family members in that household automatically inherit and share full access to photo scanning and AI features without needing their own key. For security, the secret API key string is masked and protected from non-author family members.
+  - **Works Identically for Friends & Spouses**: When your friend sets up his own household and enters his key, his wife instantly inherits his key when she joins his family via invite code — she never has to enter a key, and their key remains completely isolated to their household.
 
 ---
 
