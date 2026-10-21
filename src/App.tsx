@@ -36,9 +36,9 @@ import { deductCabinetForCompletedMeals } from './utils/groceryEngine';
 type ActiveTab = 'catalog' | 'cabinet' | 'grocery' | 'cooking';
 
 const STORAGE_KEYS = {
-  recipes: 'freshdiy_recipes_v1',
+  recipes: 'freshdiy_recipes_v2',
   cabinet: 'freshdiy_cabinet_v1',
-  plan: 'freshdiy_weekly_plan_v1',
+  plan: 'freshdiy_weekly_plan_v2',
   feedback: 'freshdiy_feedback_v1',
   extras: 'freshdiy_extras_v1',
   isDairyFree: 'freshdiy_is_dairy_free_v1',

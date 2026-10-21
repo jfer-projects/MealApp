@@ -78,6 +78,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
   const [showAllVersions, setShowAllVersions] = useState(false);
   const [customFridgeInput, setCustomFridgeInput] = useState('');
   const [showMatcherPanel, setShowMatcherPanel] = useState(true);
+  const [visibleLimit, setVisibleLimit] = useState(24);
 
   // Compute match scores for all recipes
   const matchMap = useMemo(() => {
@@ -523,8 +524,11 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search 70+ HelloFresh recipes, ingredients, or blends..."
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setVisibleLimit(24);
+              }}
+              placeholder={`Search ${recipes.filter((r) => r.is_latest).length}+ authentic HelloFresh recipes, ingredients, or blends...`}
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
@@ -566,7 +570,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
 
         {/* Recipe Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {visibleRecipes.map((recipe) => {
+          {visibleRecipes.slice(0, visibleLimit).map((recipe) => {
             const matchInfo = matchMap.get(recipe.id);
             const previewIngredients = recipe.ingredients_json
               .slice(0, 5)
@@ -742,6 +746,28 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
             );
           })}
         </div>
+
+        {visibleRecipes.length > visibleLimit && (
+          <div className="flex flex-col items-center justify-center pt-4 gap-2">
+            <p className="text-xs text-slate-500">
+              Showing {visibleLimit} of {visibleRecipes.length} unique HelloFresh recipes
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setVisibleLimit((prev) => prev + 24)}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+              >
+                Load 24 More Recipes
+              </button>
+              <button
+                onClick={() => setVisibleLimit(visibleRecipes.length)}
+                className="px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                Show All ({visibleRecipes.length})
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );
