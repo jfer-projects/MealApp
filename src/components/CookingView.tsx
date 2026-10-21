@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  Beaker,
   CheckCircle2,
   Clock,
   Flame,
@@ -8,6 +9,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  ShoppingCart,
   Sparkles,
   Users,
   Wind,
@@ -17,6 +19,10 @@ import {
   RecipeFeedback,
   ServingsSize,
 } from '../types/freshdiy';
+import {
+  findBlendDefinition,
+  HELLOFRESH_PROPRIETARY_BLENDS,
+} from '../utils/blendDecoder';
 import {
   formatAmount,
   transformIngredient,
@@ -36,6 +42,8 @@ interface CookingViewProps {
     authorName: string,
     notes: string
   ) => void;
+  onAddRecipeToGroceryList: (recipe: Recipe, servings: ServingsSize) => void;
+  onOpenBlendModal: (blendName: string) => void;
   onBackToCatalog: () => void;
 }
 
@@ -56,6 +64,8 @@ export const CookingView: React.FC<CookingViewProps> = ({
   onChangeServings,
   onSelectVersion,
   onSubmitFeedbackAndFork,
+  onAddRecipeToGroceryList,
+  onOpenBlendModal,
   onBackToCatalog,
 }) => {
   const [useAirFryer, setUseAirFryer] = useState(
@@ -182,28 +192,38 @@ export const CookingView: React.FC<CookingViewProps> = ({
           <ArrowLeft className="w-4 h-4" /> Back to Recipe Vault
         </button>
 
-        {/* Version Switcher */}
-        {allVersions.length > 1 && (
-          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
-            <GitBranch className="w-4 h-4 text-violet-600" />
-            <span className="text-xs font-bold text-slate-600">
-              Recipe Version:
-            </span>
-            {allVersions.map((ver) => (
-              <button
-                key={ver.id}
-                onClick={() => onSelectVersion(ver)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  ver.id === recipe.id
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                v{ver.version} {ver.is_latest ? '(Latest)' : ''}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => onAddRecipeToGroceryList(recipe, servings)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            + Add Recipe ({servings}p) to Grocery List
+          </button>
+
+          {/* Version Switcher */}
+          {allVersions.length > 1 && (
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
+              <GitBranch className="w-4 h-4 text-violet-600" />
+              <span className="text-xs font-bold text-slate-600">
+                Recipe Version:
+              </span>
+              {allVersions.map((ver) => (
+                <button
+                  key={ver.id}
+                  onClick={() => onSelectVersion(ver)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    ver.id === recipe.id
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  v{ver.version} {ver.is_latest ? '(Latest)' : ''}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {forkBanner && (
@@ -319,38 +339,51 @@ export const CookingView: React.FC<CookingViewProps> = ({
               Ingredients ({servings} Servings)
             </h2>
             <span className="text-xs text-slate-400">
-              Auto-scaled
+              Click any ✨ blend for DIY recipe
             </span>
           </div>
 
           <ul className="space-y-2.5">
-            {scaledIngredients.map((ing, idx) => (
-              <li
-                key={idx}
-                className={`p-2.5 rounded-xl border text-xs flex items-center justify-between ${
-                  ing.original_dairy_name
-                    ? 'bg-teal-50/70 border-teal-200 text-teal-950'
-                    : 'bg-slate-50/70 border-slate-200/80 text-slate-800'
-                }`}
-              >
-                <div>
-                  <span className="font-bold">{ing.name}</span>
-                  {ing.original_dairy_name && (
-                    <span className="block text-[10px] text-teal-700 font-medium">
-                      🌱 {ing.substitution_note}
-                    </span>
-                  )}
-                  {ing.blend_name && (
-                    <span className="block text-[10px] text-amber-700 font-medium">
-                      ✨ HelloFresh Blend: {ing.blend_name}
-                    </span>
-                  )}
-                </div>
-                <span className="font-extrabold text-slate-900 ml-2 shrink-0">
-                  {formatAmount(ing.amount)} {ing.unit}
-                </span>
-              </li>
-            ))}
+            {scaledIngredients.map((ing, idx) => {
+              const matchedBlend = findBlendDefinition(
+                ing.blend_name || ing.name
+              );
+
+              return (
+                <li
+                  key={idx}
+                  onClick={() => {
+                    if (matchedBlend) {
+                      onOpenBlendModal(matchedBlend.name);
+                    }
+                  }}
+                  className={`p-2.5 rounded-xl border text-xs flex items-center justify-between transition ${
+                    matchedBlend
+                      ? 'bg-amber-50/80 border-amber-300 text-amber-950 cursor-pointer hover:bg-amber-100/80 ring-1 ring-amber-400/30'
+                      : ing.original_dairy_name
+                      ? 'bg-teal-50/70 border-teal-200 text-teal-950'
+                      : 'bg-slate-50/70 border-slate-200/80 text-slate-800'
+                  }`}
+                >
+                  <div>
+                    <span className="font-bold">{ing.name}</span>
+                    {ing.original_dairy_name && (
+                      <span className="block text-[10px] text-teal-700 font-medium">
+                        🌱 {ing.substitution_note}
+                      </span>
+                    )}
+                    {matchedBlend && (
+                      <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-amber-200/80 text-[10px] text-amber-950 font-extrabold">
+                        <Beaker className="w-3 h-3" /> Click to see how to make {matchedBlend.name}
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-extrabold text-slate-900 ml-2 shrink-0">
+                    {formatAmount(ing.amount)} {ing.unit}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </aside>
 
@@ -359,6 +392,15 @@ export const CookingView: React.FC<CookingViewProps> = ({
           {scaledInstructions.map((step) => {
             const isDone = Boolean(completedSteps[step.step]);
             const timer = timers[step.step];
+
+            // Detect any proprietary blends mentioned inside this cooking step!
+            const stepBlends = HELLOFRESH_PROPRIETARY_BLENDS.filter(
+              (b) =>
+                step.body.toLowerCase().includes(b.name.toLowerCase()) ||
+                b.aliases?.some((al) =>
+                  step.body.toLowerCase().includes(al.toLowerCase())
+                )
+            );
 
             // Determine active instruction text based on Appliance Adaptations
             const airFryerText =
@@ -410,6 +452,22 @@ export const CookingView: React.FC<CookingViewProps> = ({
                 <p className="text-sm text-slate-700 leading-relaxed">
                   {step.body}
                 </p>
+
+                {/* Clickable DIY Blend Buttons inside Step Card */}
+                {stepBlends.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {stepBlends.map((b) => (
+                      <button
+                        key={b.name}
+                        onClick={() => onOpenBlendModal(b.name)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 text-xs font-bold transition cursor-pointer"
+                      >
+                        <Beaker className="w-3.5 h-3.5 text-amber-700" />
+                        How to make {b.name} ({b.yieldNote.split(':')[1]?.trim() || 'View DIY Formula'})
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Appliance Diversion Callouts */}
                 {airFryerText && (

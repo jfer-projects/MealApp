@@ -9,6 +9,7 @@ import {
   ShoppingCart,
   Sparkles,
 } from 'lucide-react';
+import { BlendRecipeModal } from './components/BlendRecipeModal';
 import { CabinetView } from './components/CabinetView';
 import { CatalogPlannerView } from './components/CatalogPlannerView';
 import { CookingView } from './components/CookingView';
@@ -22,6 +23,7 @@ import {
 import {
   CabinetItem,
   DayOfWeek,
+  DAYS_OF_WEEK,
   GroceryExtra,
   Recipe,
   RecipeFeedback,
@@ -112,6 +114,7 @@ export const App: React.FC = () => {
   // Active recipe in Cooking View
   const [cookingRecipeId, setCookingRecipeId] = useState<string | null>(null);
   const [cookingServings, setCookingServings] = useState<ServingsSize>(4);
+  const [activeBlendModal, setActiveBlendModal] = useState<string | null>(null);
 
   // Notification banner (e.g., Phase 4 Auto-Deduction results or Supabase sync)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -684,6 +687,7 @@ export const App: React.FC = () => {
               setCookingServings(serv);
               setActiveTab('cooking');
             }}
+            onOpenBlendModal={(blendName) => setActiveBlendModal(blendName)}
           />
         )}
 
@@ -703,20 +707,26 @@ export const App: React.FC = () => {
             cabinet={cabinet}
             extras={extras}
             isDairyFree={isDairyFree}
+            defaultServings={defaultServings}
             valleriaPhone={valleriaPhone}
             onSetValleriaPhone={setValleriaPhone}
-            onAddExtra={(itemName, aisle) =>
-              setExtras((prev) => [
-                ...prev,
-                {
-                  id: `extra-${Date.now()}`,
-                  week_start_date: '2026-10-19',
+            onAddExtra={async (itemName, aisle) => {
+              const newEx: GroceryExtra = {
+                id: `extra-${Date.now()}`,
+                week_start_date: '2026-10-19',
+                item_name: itemName,
+                aisle,
+                checked: false,
+              };
+              setExtras((prev) => [...prev, newEx]);
+              if (supaStatus.tablesReady) {
+                await supabase.from('grocery_extras').insert({
                   item_name: itemName,
                   aisle,
                   checked: false,
-                },
-              ])
-            }
+                });
+              }
+            }}
             onToggleExtra={(id) =>
               setExtras((prev) =>
                 prev.map((e) =>
@@ -727,6 +737,10 @@ export const App: React.FC = () => {
             onDeleteExtra={(id) =>
               setExtras((prev) => prev.filter((e) => e.id !== id))
             }
+            onAddToPlan={handleAddToPlan}
+            onRemoveFromPlan={handleRemoveFromPlan}
+            onUpdatePlanServings={handleUpdatePlanServings}
+            onOpenBlendModal={(blendName) => setActiveBlendModal(blendName)}
           />
         )}
 
@@ -740,10 +754,39 @@ export const App: React.FC = () => {
             onChangeServings={setCookingServings}
             onSelectVersion={(ver) => setCookingRecipeId(ver.id)}
             onSubmitFeedbackAndFork={handleSubmitFeedbackAndFork}
+            onAddRecipeToGroceryList={(rec, serv) => {
+              const usedDays = new Set(weeklyPlan.map((p) => p.day_of_week));
+              const availableDay =
+                DAYS_OF_WEEK.find((d) => !usedDays.has(d)) || 'Sunday';
+              handleAddToPlan(rec.id, availableDay, serv);
+              showToast(
+                `🛒 Added ${rec.title} (${serv} servings) to your Grocery List (${availableDay})!`
+              );
+            }}
+            onOpenBlendModal={(blendName) => setActiveBlendModal(blendName)}
             onBackToCatalog={() => setActiveTab('catalog')}
           />
         )}
       </main>
+
+      <BlendRecipeModal
+        blendName={activeBlendModal}
+        cabinet={cabinet}
+        onClose={() => setActiveBlendModal(null)}
+        onAddExtraToGrocery={(itemName, aisle) => {
+          setExtras((prev) => [
+            ...prev,
+            {
+              id: `extra-${Date.now()}-${Math.random()}`,
+              week_start_date: '2026-10-19',
+              item_name: itemName,
+              aisle,
+              checked: false,
+            },
+          ]);
+          showToast(`🛒 Added ${itemName} to your Grocery List!`);
+        }}
+      />
     </div>
   );
 };

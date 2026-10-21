@@ -23,6 +23,7 @@ import {
   WeeklyPlanItem,
 } from '../types/freshdiy';
 import { formatAmount, transformIngredient } from '../utils/dairyEngine';
+import { findBlendDefinition } from '../utils/blendDecoder';
 import {
   COMMON_FRIDGE_STAPLES,
   evaluateRecipeMatch,
@@ -44,6 +45,7 @@ interface CatalogPlannerViewProps {
   onRemoveFromPlan: (planId: string) => void;
   onCompleteWeeklyPlan: () => void;
   onOpenCookingView: (recipe: Recipe, servings: ServingsSize) => void;
+  onOpenBlendModal: (blendName: string) => void;
 }
 
 const FILTER_TAGS = [
@@ -71,6 +73,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
   onRemoveFromPlan,
   onCompleteWeeklyPlan,
   onOpenCookingView,
+  onOpenBlendModal,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTag, setActiveTag] = useState('All');
@@ -686,28 +689,41 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                     {/* Scaled Ingredients Preview */}
                     <div className="mt-3 pt-3 border-t border-slate-100">
                       <p className="text-[11px] font-semibold text-slate-500 mb-1.5">
-                        Scaled for {defaultServings} Servings:
+                        Scaled for {defaultServings} Servings (click ✨ blends for DIY recipe):
                       </p>
                       <div className="flex flex-wrap gap-1">
-                        {previewIngredients.map((ing, i) => (
-                          <span
-                            key={i}
-                            className={`text-[11px] px-2 py-0.5 rounded-md border ${
-                              ing.original_dairy_name
-                                ? 'bg-teal-50 border-teal-200 text-teal-900 font-medium'
-                                : ing.blend_name
-                                ? 'bg-amber-50 border-amber-200 text-amber-900 font-medium'
-                                : 'bg-slate-50 border-slate-200 text-slate-700'
-                            }`}
-                            title={
-                              ing.original_dairy_name
-                                ? `Substituted from ${ing.original_dairy_name}`
-                                : undefined
-                            }
-                          >
-                            {formatAmount(ing.amount)} {ing.unit} {ing.name}
-                          </span>
-                        ))}
+                        {previewIngredients.map((ing, i) => {
+                          const matchedBlend = findBlendDefinition(
+                            ing.blend_name || ing.name
+                          );
+                          return (
+                            <span
+                              key={i}
+                              onClick={() => {
+                                if (matchedBlend) {
+                                  onOpenBlendModal(matchedBlend.name);
+                                }
+                              }}
+                              className={`text-[11px] px-2 py-0.5 rounded-md border ${
+                                matchedBlend
+                                  ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold cursor-pointer hover:bg-amber-200'
+                                  : ing.original_dairy_name
+                                  ? 'bg-teal-50 border-teal-200 text-teal-900 font-medium'
+                                  : 'bg-slate-50 border-slate-200 text-slate-700'
+                              }`}
+                              title={
+                                matchedBlend
+                                  ? `Click to see how to make ${matchedBlend.name} at home`
+                                  : ing.original_dairy_name
+                                  ? `Substituted from ${ing.original_dairy_name}`
+                                  : undefined
+                              }
+                            >
+                              {matchedBlend ? '✨ ' : ''}
+                              {formatAmount(ing.amount)} {ing.unit} {ing.name}
+                            </span>
+                          );
+                        })}
                         {recipe.ingredients_json.length > 5 && (
                           <span className="text-[11px] px-2 py-0.5 text-slate-400">
                             +{recipe.ingredients_json.length - 5} more
