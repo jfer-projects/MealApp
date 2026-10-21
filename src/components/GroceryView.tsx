@@ -10,6 +10,7 @@ import {
   DollarSign,
   Heart,
   Mail,
+  Package,
   Plus,
   Search,
   Share2,
@@ -76,7 +77,7 @@ interface GroceryViewProps {
   onToggleExtra: (id: string) => void;
   onToggleExtraRecurring?: (id: string) => void;
   onDeleteExtra: (id: string) => void;
-  onMarkItemInInventory?: (itemName: string, aisle: string) => void;
+  onMarkItemInInventory?: (itemName: string, aisle: string, qty?: number, unit?: string) => void;
   onAddToPlan: (recipeId: string, day: DayOfWeek, servings: ServingsSize) => void;
   onRemoveFromPlan: (planId: string) => void;
   onUpdatePlanServings: (planId: string, servings: ServingsSize) => void;
@@ -185,6 +186,90 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
     setPastedText('');
     setParsedNoteItems([]);
     setIsPasteModalOpen(false);
+  };
+
+  // Preference for moving checked-off items to Kitchen Inventory: 'ask' | 'always' | 'never'
+  const [checkoffMovePref, setCheckoffMovePref] = useState<'ask' | 'always' | 'never'>(() => {
+    const saved = localStorage.getItem('freshdiy_checkoff_move_pref_v1');
+    return saved === 'always' || saved === 'never' ? saved : 'ask';
+  });
+  const [promptItem, setPromptItem] = useState<{
+    name: string;
+    aisle: string;
+    qty?: number;
+    unit?: string;
+  } | null>(null);
+  const [rememberChoice, setRememberChoice] = useState(false);
+
+  const handleCheckRecipeItem = (item: {
+    key: string;
+    name: string;
+    aisle: string;
+    totalAmount: number;
+    unit: string;
+  }) => {
+    const isCurrentlyChecked = Boolean(checkedGroceryKeys[item.key]);
+    onToggleGroceryKey(item.key);
+
+    // If item was unchecked and is now being checked off in the store:
+    if (!isCurrentlyChecked && onMarkItemInInventory) {
+      const qty = Math.ceil(item.totalAmount) || 1;
+      if (checkoffMovePref === 'always') {
+        onMarkItemInInventory(item.name, item.aisle, qty, item.unit);
+      } else if (checkoffMovePref === 'ask') {
+        setPromptItem({
+          name: item.name,
+          aisle: item.aisle,
+          qty,
+          unit: item.unit,
+        });
+        setRememberChoice(false);
+      }
+    }
+  };
+
+  const handleCheckExtraItem = (ex: GroceryExtra) => {
+    const isCurrentlyChecked = ex.checked;
+    onToggleExtra(ex.id);
+
+    // If item was unchecked and is now being checked off in the store:
+    if (!isCurrentlyChecked && onMarkItemInInventory) {
+      if (checkoffMovePref === 'always') {
+        onMarkItemInInventory(ex.item_name, ex.aisle || 'Household & Extras', 1, 'item');
+      } else if (checkoffMovePref === 'ask') {
+        setPromptItem({
+          name: ex.item_name,
+          aisle: ex.aisle || 'Household & Extras',
+          qty: 1,
+          unit: 'item',
+        });
+        setRememberChoice(false);
+      }
+    }
+  };
+
+  const handleConfirmMovePrompt = (shouldMove: boolean) => {
+    if (promptItem && shouldMove && onMarkItemInInventory) {
+      onMarkItemInInventory(
+        promptItem.name,
+        promptItem.aisle,
+        promptItem.qty,
+        promptItem.unit
+      );
+    }
+    if (rememberChoice) {
+      const nextPref = shouldMove ? 'always' : 'never';
+      setCheckoffMovePref(nextPref);
+      localStorage.setItem('freshdiy_checkoff_move_pref_v1', nextPref);
+      setShareFeedback(
+        nextPref === 'always'
+          ? '⚙️ Remembered: Checked-off items will now automatically move to Kitchen Inventory!'
+          : '⚙️ Remembered: Items will just check off without moving to Kitchen Inventory.'
+      );
+      setTimeout(() => setShareFeedback(null), 4000);
+    }
+    setPromptItem(null);
+    setRememberChoice(false);
   };
 
   // Filter weekly plan items for the active week
@@ -413,6 +498,27 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
             >
               Valleria
             </button>
+          </div>
+
+          {/* Check-off Inventory Transfer Preference */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
+            <span className="text-[11px] font-bold text-slate-500 px-2 flex items-center gap-1">
+              <Package className="w-3 h-3 text-emerald-600" /> On Check:
+            </span>
+            <select
+              value={checkoffMovePref}
+              onChange={(e) => {
+                const val = e.target.value as 'ask' | 'always' | 'never';
+                setCheckoffMovePref(val);
+                localStorage.setItem('freshdiy_checkoff_move_pref_v1', val);
+              }}
+              className="bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 cursor-pointer"
+              title="When checking off an item in the store: ask, always move to inventory, or just check off"
+            >
+              <option value="ask">Ask to Move to Inventory</option>
+              <option value="always">Always Move to Inventory</option>
+              <option value="never">Never Move</option>
+            </select>
           </div>
 
           {/* Paste List from Shared Note Button */}
@@ -777,7 +883,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                   <input
                     type="checkbox"
                     checked={ex.checked}
-                    onChange={() => onToggleExtra(ex.id)}
+                    onChange={() => handleCheckExtraItem(ex)}
                     className="rounded border-slate-300 text-emerald-600"
                   />
                   <span>
@@ -868,7 +974,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                 {extraItems.map((ex) => (
                   <div
                     key={ex.id}
-                    onClick={() => onToggleExtra(ex.id)}
+                    onClick={() => handleCheckExtraItem(ex)}
                     className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-3 ${
                       ex.checked
                         ? 'bg-slate-50 border-slate-200/70 opacity-60'
@@ -910,7 +1016,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onMarkItemInInventory(ex.item_name, ex.aisle);
+                            onMarkItemInInventory(ex.item_name, ex.aisle, 1, 'item');
                           }}
                           className="px-2 py-1 rounded-xl bg-white hover:bg-emerald-100 border border-slate-200 text-slate-600 hover:text-emerald-900 text-[10px] font-extrabold transition cursor-pointer"
                           title="Add to Kitchen Inventory"
@@ -944,7 +1050,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                   return (
                     <div
                       key={item.key}
-                      onClick={() => onToggleGroceryKey(item.key)}
+                      onClick={() => handleCheckRecipeItem(item)}
                       className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-3 ${
                         isCrossed
                           ? 'bg-slate-50 border-slate-200/70 opacity-60'
@@ -1013,7 +1119,12 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onMarkItemInInventory(item.name, item.aisle);
+                            onMarkItemInInventory(
+                              item.name,
+                              item.aisle,
+                              Math.ceil(item.totalAmount) || 1,
+                              item.unit
+                            );
                           }}
                           className="px-2 py-1 rounded-xl bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-900 text-[10px] font-extrabold shrink-0 transition cursor-pointer"
                           title="Already have this in your Fridge/Freezer/Pantry? Mark it in-stock in Kitchen Inventory!"
@@ -1207,6 +1318,95 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
               >
                 + Add {parsedNoteItems.length || ''} Item
                 {parsedNoteItems.length === 1 ? '' : 's'} to Grocery List
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🛒 ITEM CHECKED OFF: MOVE TO INVENTORY PROMPT MODAL */}
+      {promptItem && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => handleConfirmMovePrompt(false)}
+        >
+          <div
+            className="bg-white rounded-t-3xl sm:rounded-3xl border border-slate-200 max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
+                  <Package className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Move to Kitchen Inventory?
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    You checked off an item in your shopping list.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleConfirmMovePrompt(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-extrabold text-slate-900">
+                  {promptItem.name}
+                </span>
+                <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  +{promptItem.qty || 1} {promptItem.unit || 'item'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600">
+                Will be added as In-Stock in{' '}
+                <strong>
+                  {promptItem.aisle === 'Meat & Seafood'
+                    ? 'Freezer & Deep Freeze'
+                    : promptItem.aisle === 'Produce' ||
+                      promptItem.aisle === 'Dairy Alternatives' ||
+                      promptItem.aisle === 'Dairy & Eggs'
+                    ? 'Refrigerator'
+                    : 'Pantry & Spices'}
+                </strong>
+                .
+              </p>
+            </div>
+
+            <label className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-50 cursor-pointer select-none border border-transparent hover:border-slate-200 transition">
+              <input
+                type="checkbox"
+                checked={rememberChoice}
+                onChange={(e) => setRememberChoice(e.target.checked)}
+                className="rounded border-slate-300 text-emerald-600 w-4 h-4"
+              />
+              <span className="text-xs font-bold text-slate-700">
+                Remember my choice and don&apos;t ask again
+              </span>
+            </label>
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => handleConfirmMovePrompt(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition cursor-pointer"
+              >
+                Just Check Off
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmMovePrompt(true)}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition cursor-pointer"
+              >
+                ✓ Yes, Move to Inventory
               </button>
             </div>
           </div>

@@ -1677,7 +1677,7 @@ export const App: React.FC = () => {
                 await supabase.from('grocery_extras').delete().eq('id', id);
               }
             }}
-            onMarkItemInInventory={async (itemName, aisle) => {
+            onMarkItemInInventory={async (itemName, aisle, qty, unit) => {
               const cat: CabinetItem['category'] =
                 aisle === 'Meat & Seafood'
                   ? 'Freezer & Deep Freeze'
@@ -1686,9 +1686,14 @@ export const App: React.FC = () => {
                     aisle === 'Dairy & Eggs'
                   ? 'Refrigerator'
                   : 'Spices';
-              await handleAddCabinetItem(itemName, cat, 'in_stock');
+              await handleAddCabinetItem(itemName, cat, 'in_stock', {
+                freezer_qty: cat === 'Freezer & Deep Freeze' ? (qty ?? 1) : 0,
+                fridge_qty: cat === 'Refrigerator' ? (qty ?? 1) : 0,
+                pantry_qty: cat !== 'Freezer & Deep Freeze' && cat !== 'Refrigerator' ? (qty ?? 1) : 0,
+                unit: unit || (cat === 'Freezer & Deep Freeze' ? 'pkg' : 'item'),
+              });
               showToast(
-                `✅ Marked "${itemName}" as In-Stock in your Kitchen Inventory (${cat})!`
+                `✅ Added "${itemName}" to Kitchen Inventory (${cat})!`
               );
             }}
             onAddToPlan={handleAddToPlan}
