@@ -127,12 +127,34 @@ export const App: React.FC = () => {
       const status = await checkSupabaseTablesReady();
       setSupaStatus(status);
 
-      // 1. Check if Supabase has recipes already
+      // 1. Check if Supabase has recipes & cabinet data already
       if (status.tablesReady) {
-        const { data: remoteRecipes } = await supabase
-          .from('recipes')
-          .select('*')
-          .order('version', { ascending: false });
+        const [
+          { data: remoteRecipes },
+          { data: remoteCabinet },
+          { data: remotePlan },
+          { data: remoteFeedback },
+          { data: remoteExtras },
+        ] = await Promise.all([
+          supabase.from('recipes').select('*').order('version', { ascending: false }),
+          supabase.from('cabinet').select('*').order('item_name', { ascending: true }),
+          supabase.from('weekly_plan').select('*'),
+          supabase.from('recipe_feedback').select('*').order('created_at', { ascending: false }),
+          supabase.from('grocery_extras').select('*').order('created_at', { ascending: true }),
+        ]);
+
+        if (remoteCabinet && remoteCabinet.length > 0) {
+          setCabinet(remoteCabinet as CabinetItem[]);
+        }
+        if (remotePlan && remotePlan.length > 0) {
+          setWeeklyPlan(remotePlan as WeeklyPlanItem[]);
+        }
+        if (remoteFeedback && remoteFeedback.length > 0) {
+          setFeedbackList(remoteFeedback as RecipeFeedback[]);
+        }
+        if (remoteExtras && remoteExtras.length > 0) {
+          setExtras(remoteExtras as GroceryExtra[]);
+        }
         if (remoteRecipes && remoteRecipes.length > 0) {
           setRecipes(remoteRecipes as Recipe[]);
           localStorage.setItem(
@@ -298,6 +320,15 @@ export const App: React.FC = () => {
       }))
     );
 
+    if (supaStatus.tablesReady) {
+      for (const cab of updatedCabinet) {
+        await supabase
+          .from('cabinet')
+          .update({ status: cab.status, usage_count: cab.usage_count })
+          .eq('item_name', cab.item_name);
+      }
+    }
+
     if (deductedNames.length > 0) {
       showToast(
         `🎉 Weekly Plan Completed! Auto-deducted ${deductedNames.length} cabinet items: ${deductedNames.slice(0, 4).join(', ')}${
@@ -310,6 +341,7 @@ export const App: React.FC = () => {
   };
 
   const handleUpdateCabinetStatus = async (id: string, status: StockStatus) => {
+    const target = cabinet.find((c) => c.id === id);
     setCabinet((prev) =>
       prev.map((c) =>
         c.id === id
@@ -321,9 +353,18 @@ export const App: React.FC = () => {
           : c
       )
     );
+    if (supaStatus.tablesReady && target) {
+      await supabase
+        .from('cabinet')
+        .update({
+          status,
+          usage_count: status === 'in_stock' ? 0 : target.usage_count,
+        })
+        .eq('item_name', target.item_name);
+    }
   };
 
-  const handleAddCabinetItem = (
+  const handleAddCabinetItem = async (
     name: string,
     category: CabinetItem['category'],
     status: StockStatus
@@ -336,12 +377,26 @@ export const App: React.FC = () => {
       usage_count: 0,
     };
     setCabinet((prev) => [newItem, ...prev]);
+    if (supaStatus.tablesReady) {
+      await supabase.from('cabinet').insert({
+        item_name: name,
+        category,
+        status,
+        usage_count: 0,
+      });
+    }
   };
 
-  const handleRestockAllLowAndOut = () => {
+  const handleRestockAllLowAndOut = async () => {
     setCabinet((prev) =>
       prev.map((c) => ({ ...c, status: 'in_stock', usage_count: 0 }))
     );
+    if (supaStatus.tablesReady) {
+      await supabase
+        .from('cabinet')
+        .update({ status: 'in_stock', usage_count: 0 })
+        .neq('status', 'in_stock');
+    }
     showToast('✅ All Spice & Pantry Cabinet items restocked to In-Stock!');
   };
 
