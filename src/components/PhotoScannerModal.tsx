@@ -23,6 +23,7 @@ interface PhotoScannerModalProps {
   isOpen: boolean;
   initialMode: 'cabinet' | 'fridge' | 'freezer';
   geminiApiKey?: string;
+  onUpdateGeminiApiKey?: (key: string) => void;
   onOpenFamilySettings?: () => void;
   onClose: () => void;
   onImportToCabinet: (
@@ -42,6 +43,7 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
   isOpen,
   initialMode,
   geminiApiKey = '',
+  onUpdateGeminiApiKey,
   onOpenFamilySettings,
   onClose,
   onImportToCabinet,
@@ -53,17 +55,23 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
   const [scanError, setScanError] = useState<string | null>(null);
   const [detected, setDetected] = useState<DetectedIngredient[]>([]);
   const [customAdd, setCustomAdd] = useState('');
+  const [showApiKeyConfig, setShowApiKeyConfig] = useState(!geminiApiKey);
+  const [tempApiKey, setTempApiKey] = useState(geminiApiKey || '');
+  const [keySavedFeedback, setKeySavedFeedback] = useState(false);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
+  const effectiveApiKey = (geminiApiKey || tempApiKey || '').trim();
+
   const analyzeImage = async (file: File) => {
     setScanError(null);
-    if (!geminiApiKey || !geminiApiKey.trim()) {
+    if (!effectiveApiKey) {
+      setShowApiKeyConfig(true);
       setScanError(
-        'A Gemini API Key is required to scan photos. Please enter your family key in Settings.'
+        'A Google Gemini API Key is required to scan photos. Please paste your key below and tap Save.'
       );
       return;
     }
@@ -72,7 +80,7 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
     setPreviewUrl(URL.createObjectURL(file));
 
     try {
-      const items = await analyzePhotoWithGemini(file, scanMode, geminiApiKey);
+      const items = await analyzePhotoWithGemini(file, scanMode, effectiveApiKey);
       if (items.length === 0) {
         setScanError('No recognizable items found in photo. Please ensure clear lighting and try again.');
       } else {
@@ -179,17 +187,66 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
           </div>
         </div>
 
-        {/* Gemini Vision Key Status / Warning */}
-        {!geminiApiKey ? (
-          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-start gap-3">
-            <KeyRound className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-xs font-bold text-amber-900">
-                Gemini Vision API Key Required
-              </p>
-              <p className="text-[11px] text-amber-700 mt-0.5">
-                To accurately recognize spices and fridge ingredients from photos, enter your Gemini API key in Family Settings.
-              </p>
+        {/* Gemini Vision Key Status & Inline Setup */}
+        {showApiKeyConfig || !effectiveApiKey ? (
+          <div className="p-4 rounded-2xl bg-indigo-50/90 border border-indigo-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-indigo-600" />
+                <span className="text-xs font-black text-indigo-950 uppercase tracking-wider">
+                  Google Gemini API Key (Vision AI)
+                </span>
+              </div>
+              {effectiveApiKey && (
+                <button
+                  type="button"
+                  onClick={() => setShowApiKeyConfig(false)}
+                  className="text-[11px] font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+                >
+                  Hide
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-indigo-900 leading-relaxed">
+              Enter your own Gemini API key to recognize ingredients from camera photos. Saved privately on this device.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={tempApiKey}
+                onChange={(e) => setTempApiKey(e.target.value.trim())}
+                placeholder="Paste AIzaSy... key here"
+                className="flex-1 px-3 py-2 rounded-xl bg-white border border-indigo-200 text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!tempApiKey.trim()) return;
+                  if (onUpdateGeminiApiKey) {
+                    onUpdateGeminiApiKey(tempApiKey.trim());
+                  } else {
+                    localStorage.setItem('freshdiy_gemini_api_key_v1', tempApiKey.trim());
+                  }
+                  setKeySavedFeedback(true);
+                  setTimeout(() => {
+                    setKeySavedFeedback(false);
+                    setShowApiKeyConfig(false);
+                  }, 1800);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition cursor-pointer shrink-0"
+              >
+                {keySavedFeedback ? '✓ Saved!' : 'Save Key'}
+              </button>
+            </div>
+            <div className="flex items-center justify-between pt-1 text-[11px]">
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-extrabold text-indigo-700 hover:text-indigo-900 underline inline-flex items-center gap-1"
+              >
+                Get a free Gemini API Key from Google AI Studio ↗
+              </a>
               {onOpenFamilySettings && (
                 <button
                   type="button"
@@ -197,14 +254,28 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
                     onClose();
                     onOpenFamilySettings();
                   }}
-                  className="mt-2 text-xs font-bold text-amber-900 underline underline-offset-2 hover:text-amber-950 cursor-pointer"
+                  className="text-slate-500 hover:text-slate-800 underline cursor-pointer"
                 >
-                  Configure in Family Settings →
+                  Family Settings
                 </button>
               )}
             </div>
           </div>
-        ) : null}
+        ) : (
+          <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs">
+            <span className="font-bold text-emerald-900 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              Gemini Vision AI Ready ({effectiveApiKey.slice(0, 8)}•••••)
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowApiKeyConfig(true)}
+              className="text-[11px] font-bold text-emerald-800 hover:text-emerald-950 underline cursor-pointer"
+            >
+              Change Key
+            </button>
+          </div>
+        )}
 
         {scanError && (
           <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-rose-800 text-xs font-semibold">

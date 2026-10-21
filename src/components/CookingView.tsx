@@ -674,7 +674,7 @@ export const CookingView: React.FC<CookingViewProps> = ({
                     Post-Meal Family Feedback &amp; AI Recipe Versioning (v{recipe.version} ➔ v{recipe.version + 1})
                   </h3>
                   <p className="text-xs text-slate-600">
-                    Log notes from you or Valleria. The AI agent will automatically fork this recipe JSON, adjust ingredient quantities &amp; step instructions, and publish <strong>v{recipe.version + 1}</strong> as the new default!
+                    Log notes from you or a family member. The AI agent will automatically fork this recipe JSON, adjust ingredient quantities &amp; step instructions, and publish <strong>v{recipe.version + 1}</strong> as the new default!
                   </p>
                 </div>
               </div>
@@ -702,7 +702,7 @@ export const CookingView: React.FC<CookingViewProps> = ({
                   }
                   className="px-3 py-2 rounded-xl border border-violet-200 bg-white text-xs font-bold text-slate-800"
                 >
-                  <option value="Valleria">Note from Valleria</option>
+                  <option value="Valleria">Note from Partner / Family Member</option>
                   <option value="Parent">Note from Me (Parent)</option>
                 </select>
 

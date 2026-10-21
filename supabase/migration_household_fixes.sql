@@ -151,5 +151,8 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.household_settings;
     ALTER PUBLICATION supabase_realtime ADD TABLE public.grocery_checks;
     ALTER PUBLICATION supabase_realtime ADD TABLE public.recipe_ratings;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.grocery_extras;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.weekly_plan;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.cabinet;
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;

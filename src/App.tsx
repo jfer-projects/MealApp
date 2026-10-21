@@ -530,6 +530,26 @@ export const App: React.FC = () => {
     };
   }, [supaStatus.tablesReady, currentUser?.id, currentUser?.household?.id, activeWeekStartDate]);
 
+  // Instant Cross-Tab Broadcast Channel Sync for shopping together on the same network/device
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const bc = new BroadcastChannel('freshdiy_live_sync');
+    bc.onmessage = (event) => {
+      if (event.data?.type === 'grocery_check') {
+        const { key, checked } = event.data;
+        setCheckedGroceryKeys((prev) => ({ ...prev, [key]: checked }));
+      } else if (event.data?.type === 'extra_toggle') {
+        const { id, checked } = event.data;
+        setExtras((prev) =>
+          prev.map((e) => (e.id === id ? { ...e, checked } : e))
+        );
+      }
+    };
+    return () => {
+      bc.close();
+    };
+  }, []);
+
   useEffect(() => {
     const forksOnly = recipes.filter((r) => r.version > 1);
     if (forksOnly.length > 0) {
@@ -635,6 +655,15 @@ export const App: React.FC = () => {
       ...prev,
       [key]: nextVal,
     }));
+
+    // Broadcast locally across browser tabs
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('freshdiy_live_sync');
+        bc.postMessage({ type: 'grocery_check', key, checked: nextVal });
+        bc.close();
+      }
+    } catch {}
 
     if (supaStatus.tablesReady && currentUser?.household?.id) {
       try {
@@ -1643,6 +1672,16 @@ export const App: React.FC = () => {
                   e.id === id ? { ...e, checked: nextChecked } : e
                 )
               );
+
+              // Broadcast locally across browser tabs
+              try {
+                if (typeof BroadcastChannel !== 'undefined') {
+                  const bc = new BroadcastChannel('freshdiy_live_sync');
+                  bc.postMessage({ type: 'extra_toggle', id, checked: nextChecked });
+                  bc.close();
+                }
+              } catch {}
+
               if (supaStatus.tablesReady) {
                 await supabase
                   .from('grocery_extras')
@@ -1850,6 +1889,21 @@ export const App: React.FC = () => {
         isOpen={photoScannerState.open}
         initialMode={photoScannerState.mode}
         geminiApiKey={geminiApiKey}
+        onUpdateGeminiApiKey={(k) => {
+          setGeminiApiKey(k);
+          localStorage.setItem('freshdiy_gemini_api_key_v1', k);
+          if (currentUser?.household?.id) {
+            supabase
+              .from('household_settings')
+              .upsert({
+                household_id: currentUser.household.id,
+                gemini_api_key: k || null,
+                updated_at: new Date().toISOString(),
+              })
+              .then(() => {})
+              .catch(() => {});
+          }
+        }}
         onOpenFamilySettings={() => setIsFamilyModalOpen(true)}
         onClose={() =>
           setPhotoScannerState((prev) => ({ ...prev, open: false }))

@@ -260,7 +260,7 @@ export function buildAggregatedGroceryList(
 }
 
 /**
- * Formats the grocery list for the "Send to Valleria" feature.
+ * Formats the grocery list for the "Share with Family" feature.
  * When storeLayout is provided (e.g., Stop & Shop American Legion), groups and sequences
  * items along the store's exact walking path with aisle and department tags.
  */
@@ -310,7 +310,7 @@ export function formatGroceryListForValleria(
     }
 
     const lines: string[] = [
-      `🛒 FreshDIY Shopping List for Valleria`,
+      `🛒 FreshDIY Family Shopping List`,
       `🏪 ${storeLayout.name}`,
       `📍 ${storeLayout.address}`,
       `🚶‍♂️ Sequential Walking Route (Zero Backtracking)`,
@@ -369,7 +369,7 @@ export function formatGroceryListForValleria(
 
   const sortedAisles = Array.from(byAisle.keys()).sort(sortAisles);
   const lines: string[] = [
-    `🛒 FreshDIY Family Grocery List for Valleria`,
+    `🛒 FreshDIY Family Grocery List`,
     `👨‍👩‍👧‍👦 Scaled for Family Plan ${isDairyFree ? '• 🌱 Dairy-Free Mode Active' : ''}`,
     `----------------------------------------`,
   ];

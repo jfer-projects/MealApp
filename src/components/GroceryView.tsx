@@ -503,7 +503,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
         `sms:${cleanPhone}?&body=${encodeURIComponent(smsText)}`,
         '_blank'
       );
-      setShareFeedback(`Opened SMS to Valleria (${valleriaPhone}) & copied list!`);
+      setShareFeedback(`Opened SMS for Family Member (${valleriaPhone}) & copied list!`);
     } else {
       setShowSmsPreview(true);
       setShareFeedback('Copied formatted Grocery List to clipboard!');
@@ -518,7 +518,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
     const body = encodeURIComponent(smsText);
     const to = valleriaEmail.trim() ? encodeURIComponent(valleriaEmail.trim()) : '';
     window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
-    setShareFeedback('Opened email client for Valleria!');
+    setShareFeedback('Opened email client for Family Member!');
     setTimeout(() => setShareFeedback(null), 3500);
   };
 
@@ -801,7 +801,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Valleria
+              Partner / Family
             </button>
           </div>
 
@@ -852,7 +852,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition cursor-pointer"
           >
             <Share2 className="w-4 h-4" />
-            Send to Valleria
+            Share with Family
           </button>
         </div>
       </section>
@@ -1012,7 +1012,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
         <section className="bg-slate-900 text-slate-100 rounded-3xl p-5 shadow-md space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-              📱 Live Share / Email Payload for Valleria
+              📱 Live Share / Email Payload for Family
             </span>
             <button
               onClick={async () => {
