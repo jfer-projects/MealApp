@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Beaker,
   Camera,
+  Check,
   CheckCircle2,
   Package,
   PackagePlus,
@@ -13,6 +14,7 @@ import {
   ShoppingCart,
   Snowflake,
   Trash2,
+  X,
   XCircle,
 } from 'lucide-react';
 import { CabinetItem, StockStatus } from '../types/freshdiy';
@@ -47,6 +49,12 @@ const CATEGORIES: CabinetItem['category'][] = [
   'Freezer & Deep Freeze',
 ];
 
+const SUGGESTIONS = {
+  freezer: ['Chicken Breasts', 'Ground Beef', 'Pork Chops', 'Salmon Fillets', 'Frozen Peas', 'Frozen Broccoli', 'Bacon'],
+  fridge: ['Eggs', 'Dairy-Free Sour Cream', 'Carrots', 'Bell Peppers', 'Cilantro', 'Oat Milk', 'Dijon Mustard'],
+  pantry: ['Garlic Powder', 'Onion Powder', 'Smoked Paprika', 'Cumin', 'Oregano', 'Soy Sauce', 'Rice Wine Vinegar'],
+};
+
 export const CabinetView: React.FC<CabinetViewProps> = ({
   cabinet,
   onUpdateStatus,
@@ -58,22 +66,45 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
   onOpenPhotoScanner,
   onOpenBlendModal,
 }) => {
-  const [newItemName, setNewItemName] = useState('');
-  const [newCategory, setNewCategory] =
-    useState<CabinetItem['category']>('Spices');
   const [activeZone, setActiveZone] = useState<'all' | 'pantry' | 'fridge' | 'freezer'>('all');
-  const [activeCategoryFilter, setActiveCategoryFilter] =
-    useState<string>('All');
-  const [statusFilter, setStatusFilter] = useState<
-    'all' | 'in_stock' | 'out_of_stock' | 'low'
-  >('all');
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('All');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'in_stock' | 'out_of_stock' | 'low'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const handleAdd = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newItemName.trim()) return;
-    onAddCabinetItem(newItemName.trim(), newCategory, 'in_stock');
-    setNewItemName('');
+  // Add Item Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [modalItemName, setModalItemName] = useState('');
+  const [modalCategory, setModalCategory] = useState<CabinetItem['category']>('Spices');
+  const [modalStatus, setModalStatus] = useState<StockStatus>('in_stock');
+  const [justAddedName, setJustAddedName] = useState<string | null>(null);
+
+  const handleOpenAddModal = (presetCategory?: CabinetItem['category']) => {
+    if (presetCategory) {
+      setModalCategory(presetCategory);
+    } else if (activeZone === 'freezer') {
+      setModalCategory('Freezer & Deep Freeze');
+    } else if (activeZone === 'fridge') {
+      setModalCategory('Refrigerator');
+    } else if (activeZone === 'pantry') {
+      setModalCategory('Spices');
+    } else {
+      setModalCategory('Freezer & Deep Freeze');
+    }
+    setModalItemName('');
+    setModalStatus('in_stock');
+    setJustAddedName(null);
+    setIsAddModalOpen(true);
+  };
+
+  const handleSaveModalItem = (addAnother: boolean = false) => {
+    if (!modalItemName.trim()) return;
+    const name = modalItemName.trim();
+    onAddCabinetItem(name, modalCategory, modalStatus);
+    setJustAddedName(name);
+    setModalItemName('');
+    if (!addAnother) {
+      setIsAddModalOpen(false);
+    }
   };
 
   const outItems = useMemo(
@@ -132,6 +163,13 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => handleOpenAddModal()}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-100 text-slate-900 font-extrabold text-xs shadow-md transition cursor-pointer"
+          >
+            <Plus className="w-4 h-4 text-emerald-600" />
+            + Add Item
+          </button>
           <button
             onClick={() => onOpenPhotoScanner('freezer')}
             className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md transition cursor-pointer"
@@ -401,8 +439,8 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
           </div>
         </div>
 
-        {/* Category Pills & Add Item Form */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+        {/* Category Pills & Add Item Trigger */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
             {['All', ...CATEGORIES].map((cat) => (
               <button
@@ -419,34 +457,12 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
             ))}
           </div>
 
-          <form onSubmit={handleAdd} className="flex flex-wrap items-center gap-2">
-            <input
-              type="text"
-              value={newItemName}
-              onChange={(e) => setNewItemName(e.target.value)}
-              placeholder="e.g. Chicken Breasts, Oregano..."
-              className="flex-1 sm:w-48 px-3 py-2 rounded-xl border border-slate-200 text-xs"
-            />
-            <select
-              value={newCategory}
-              onChange={(e) =>
-                setNewCategory(e.target.value as CabinetItem['category'])
-              }
-              className="px-2.5 py-2 rounded-xl border border-slate-200 text-xs bg-white"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition cursor-pointer"
-            >
-              <PackagePlus className="w-3.5 h-3.5" /> Add
-            </button>
-          </form>
+          <button
+            onClick={() => handleOpenAddModal()}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition cursor-pointer shrink-0"
+          >
+            <Plus className="w-4 h-4" /> + Add Item
+          </button>
         </div>
 
         {/* Items Grid with In/Low/Out & Delete Button */}
@@ -455,8 +471,14 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
             <Package className="w-8 h-8 text-slate-400 mx-auto mb-2" />
             <p className="text-sm font-bold text-slate-700">No items match your filter</p>
             <p className="text-xs text-slate-500 mt-1">
-              Add items manually using the input bar above, or snap a photo of your shelves.
+              Tap below to add an ingredient manually, or snap a photo of your shelves.
             </p>
+            <button
+              onClick={() => handleOpenAddModal()}
+              className="mt-3.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> + Add Item to Inventory
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -585,6 +607,235 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
           })}
         </div>
       </section>
+
+      {/* 🚀 ADD ITEM TO INVENTORY MODAL */}
+      {isAddModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setIsAddModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-t-3xl sm:rounded-3xl border border-slate-200 max-w-lg w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
+                  <PackagePlus className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">
+                    Add Item to Inventory
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Add an ingredient to your Deep Freezer, Fridge, or Pantry.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Success toast inside modal if "Add Another" was clicked */}
+            {justAddedName && (
+              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-emerald-800 text-xs font-bold animate-fadeIn">
+                <Check className="w-4 h-4 text-emerald-600" />
+                <span>Added &quot;{justAddedName}&quot;! You can add another item below:</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveModalItem(false);
+              }}
+              className="space-y-4"
+            >
+              {/* Item Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Ingredient / Item Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={modalItemName}
+                  onChange={(e) => setModalItemName(e.target.value)}
+                  placeholder="e.g. Chicken Breasts, Ground Beef, Paprika..."
+                  className="w-full px-4 py-2.5 rounded-2xl border border-slate-300 text-sm focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+                />
+
+                {/* Quick suggestions based on selected category */}
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+                    Quick Suggestions:
+                  </span>
+                  {(modalCategory === 'Freezer & Deep Freeze'
+                    ? SUGGESTIONS.freezer
+                    : modalCategory === 'Refrigerator'
+                    ? SUGGESTIONS.fridge
+                    : SUGGESTIONS.pantry
+                  ).map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setModalItemName(sug)}
+                      className="px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 text-slate-600 border border-slate-200 transition cursor-pointer"
+                    >
+                      + {sug}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Storage Location / Category */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Storage Location &amp; Category
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalCategory('Freezer & Deep Freeze')}
+                    className={`p-3 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                      modalCategory === 'Freezer & Deep Freeze'
+                        ? 'border-cyan-500 bg-cyan-50 text-cyan-900 font-extrabold ring-2 ring-cyan-400/30'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-medium'
+                    }`}
+                  >
+                    <Snowflake className="w-5 h-5 text-cyan-600" />
+                    <span className="text-xs">Deep Freezer</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setModalCategory('Refrigerator')}
+                    className={`p-3 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                      modalCategory === 'Refrigerator'
+                        ? 'border-blue-500 bg-blue-50 text-blue-900 font-extrabold ring-2 ring-blue-400/30'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-medium'
+                    }`}
+                  >
+                    <Refrigerator className="w-5 h-5 text-blue-600" />
+                    <span className="text-xs">Refrigerator</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (modalCategory === 'Freezer & Deep Freeze' || modalCategory === 'Refrigerator') {
+                        setModalCategory('Spices');
+                      }
+                    }}
+                    className={`p-3 rounded-2xl border text-center transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                      modalCategory !== 'Freezer & Deep Freeze' && modalCategory !== 'Refrigerator'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-900 font-extrabold ring-2 ring-emerald-400/30'
+                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-medium'
+                    }`}
+                  >
+                    <Package className="w-5 h-5 text-emerald-600" />
+                    <span className="text-xs">Pantry/Spices</span>
+                  </button>
+                </div>
+
+                {/* Subcategory dropdown if in Pantry */}
+                {modalCategory !== 'Freezer & Deep Freeze' && modalCategory !== 'Refrigerator' && (
+                  <div className="mt-2.5">
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Pantry Subcategory:
+                    </label>
+                    <select
+                      value={modalCategory}
+                      onChange={(e) => setModalCategory(e.target.value as CabinetItem['category'])}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white font-medium"
+                    >
+                      <option value="Spices">Spices &amp; Seasonings</option>
+                      <option value="Sauces">Sauces &amp; Condiments</option>
+                      <option value="Broth Concentrates">Broth Concentrates &amp; Stocks</option>
+                      <option value="Oils & Vinegars">Oils &amp; Vinegars</option>
+                      <option value="Pantry">Dry Pantry Staples &amp; Grains</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Initial Stock Status */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Current Stock Status
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setModalStatus('in_stock')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      modalStatus === 'in_stock'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    ✅ In Stock
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalStatus('low')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      modalStatus === 'low'
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    ⚠️ Running Low
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalStatus('out_of_stock')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      modalStatus === 'out_of_stock'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    🚨 Out of Stock
+                  </button>
+                </div>
+              </div>
+
+              {/* Bottom Actions */}
+              <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveModalItem(true)}
+                  disabled={!modalItemName.trim()}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Save &amp; Add Another
+                </button>
+                <button
+                  type="submit"
+                  disabled={!modalItemName.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Save to Inventory
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
