@@ -904,7 +904,7 @@ export const App: React.FC = () => {
       const synthesizedId = `macro-${Date.now()}`;
       const newRecipe: Recipe = {
         id: synthesizedId,
-        version: 1,
+        version: 2,
         original_id: synthesizedId,
         title: suggestion.title,
         subtitle:
@@ -919,31 +919,42 @@ export const App: React.FC = () => {
           ...suggestion.ingredientsFromHome.map((name) => ({
             name,
             amount: 1,
-            unit: 'portion' as const,
+            unit: 'portion',
+            aisle: 'Spices & Pantry',
             is_pantry_staple: true,
           })),
           ...suggestion.ingredientsToBuy.map((name) => ({
             name,
             amount: 1,
-            unit: 'portion' as const,
+            unit: 'portion',
+            aisle: 'Produce',
             is_pantry_staple: false,
           })),
         ],
         instructions_json: [
           {
             step: 1,
-            text:
+            title: 'Prep & Season',
+            body:
               suggestion.cookingSummary ||
               'Prepare on-hand and fresh ingredients according to macro targets.',
+            timer_seconds: null,
+            appliance_override: { air_fryer: null, rice_cooker: null },
           },
           {
             step: 2,
-            text:
+            title: 'Sear & Combine',
+            body:
               'Sear or roast proteins and assemble with wholesome carbs and produce to balance portions.',
+            timer_seconds: 600,
+            appliance_override: { air_fryer: null, rice_cooker: null },
           },
           {
             step: 3,
-            text: `Plate into ${servings} portions. Delivers ~${suggestion.nutrition.proteinGrams}g protein per plate!`,
+            title: 'Portion & Serve',
+            body: `Plate into ${servings} portions. Delivers ~${suggestion.nutrition.proteinGrams}g protein per plate!`,
+            timer_seconds: null,
+            appliance_override: { air_fryer: null, rice_cooker: null },
           },
         ],
         is_latest: true,
@@ -2087,8 +2098,7 @@ export const App: React.FC = () => {
                 gemini_api_key_set_by: k ? currentUser.id : null,
                 updated_at: new Date().toISOString(),
               })
-              .then(() => {})
-              .catch(() => {});
+              .then(() => {}, () => {});
           }
         }}
         onOpenFamilySettings={() => setIsFamilyModalOpen(true)}

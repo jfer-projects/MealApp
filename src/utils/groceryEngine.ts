@@ -6,6 +6,8 @@ import {
   StockStatus,
   WeeklyPlanItem,
 } from '../types/freshdiy';
+
+export type { AggregatedGroceryItem };
 import { evaluateBlendStock, HELLOFRESH_PROPRIETARY_BLENDS } from './blendDecoder';
 import { formatAmount, transformIngredient } from './dairyEngine';
 import { getItemStoreLocation, StoreLayout } from './storeLayouts';

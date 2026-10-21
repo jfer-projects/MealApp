@@ -244,7 +244,8 @@ TARGET MACROS (per serving):
 - Target Protein: >= ${macroGoals.proteinGrams}g
 - Target Net Carbs: ~${macroGoals.carbsGrams}g
 - Target Fats: ~${macroGoals.fatGrams}g
-- Diet Style / Focus: ${macroGoals.dietType || 'balanced'}
+- Diet Style / Focus: ${macroGoals.dietStyle || macroGoals.dietType || 'balanced'}
+- User Notes / Cravings: ${macroGoals.notes || 'None'}
 - Allergen Rule: ${
     isDairyFree
       ? 'DAIRY-FREE ACTIVE (Do not use cow milk, butter, or standard dairy cheese - use plant butter, oat milk, or olive oil)'
