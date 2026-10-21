@@ -1,13 +1,11 @@
--- ============================================================================
--- FreshDIY - Household Security, Shared Checks & Settings Migration
--- Run this in your Supabase SQL Editor:
--- https://supabase.com/dashboard/project/xamzenezncjsmmvkafxq/sql/new
--- ============================================================================
+/* ============================================================================ */
+/* FreshDIY - Household Security, Shared Checks & Settings Migration            */
+/* ============================================================================ */
 
--- 1. Household Settings (Holds Gemini API Key private to this household only)
+/* 1. Household Settings (Holds Gemini API Key private to this household only) */
 CREATE TABLE IF NOT EXISTS public.household_settings (
     household_id UUID PRIMARY KEY REFERENCES public.households(id) ON DELETE CASCADE,
-    gemini_api_key TEXT, -- Accessible ONLY to members of this household
+    gemini_api_key TEXT,
     is_dairy_free BOOLEAN NOT NULL DEFAULT TRUE,
     default_servings INTEGER NOT NULL DEFAULT 4 CHECK (default_servings IN (2, 4, 6)),
     dietary_flags TEXT[] NOT NULL DEFAULT '{}',
@@ -35,7 +33,7 @@ CREATE POLICY "Members can access their household settings"
         )
     );
 
--- 2. Grocery Checks Table (Realtime sync for recipe-derived ingredients)
+/* 2. Grocery Checks Table (Realtime sync for recipe-derived ingredients) */
 CREATE TABLE IF NOT EXISTS public.grocery_checks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     household_id UUID NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
@@ -63,12 +61,12 @@ CREATE POLICY "Members can access their grocery checks"
         )
     );
 
--- 3. Recipe Ratings & Favorites Table
+/* 3. Recipe Ratings & Favorites Table */
 CREATE TABLE IF NOT EXISTS public.recipe_ratings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     household_id UUID NOT NULL REFERENCES public.households(id) ON DELETE CASCADE,
     recipe_id UUID NOT NULL,
-    rating INTEGER NOT NULL DEFAULT 0, -- 1 = liked, -1 = disliked, 0 = neutral
+    rating INTEGER NOT NULL DEFAULT 0,
     is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
     times_cooked INTEGER NOT NULL DEFAULT 0,
     last_cooked_at TIMESTAMPTZ,
@@ -92,14 +90,14 @@ CREATE POLICY "Members can access their recipe ratings"
         )
     );
 
--- 4. Secure RPC function to lookup and join household by invite code (Fixes privacy issue)
+/* 4. Secure RPC function to lookup and join household by invite code */
 CREATE OR REPLACE FUNCTION public.join_household_with_code(
     invite_code_input TEXT,
     member_name TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER -- Runs with elevated rights to verify code without exposing all households
+SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
@@ -119,7 +117,7 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'message', 'Invalid invite code. Please check with your family member.');
     END IF;
 
-    -- Upsert membership
+    /* Upsert membership */
     INSERT INTO public.household_members (household_id, user_id, display_name, role)
     VALUES (found_household.id, caller_id, COALESCE(NULLIF(TRIM(member_name), ''), 'Family Member'), 'member')
     ON CONFLICT (household_id, user_id) 
@@ -137,7 +135,7 @@ BEGIN
 END;
 $$;
 
--- 5. Lock down households SELECT policy (Removes open 'OR true')
+/* 5. Lock down households SELECT policy (removes open OR true) */
 DROP POLICY IF EXISTS "Members can view their households" ON public.households;
 CREATE POLICY "Members can view their households"
     ON public.households FOR SELECT
@@ -147,7 +145,7 @@ CREATE POLICY "Members can view their households"
         )
     );
 
--- Add to realtime publication
+/* 6. Add to realtime publication */
 DO $$
 BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.household_settings;
