@@ -8,6 +8,7 @@ import {
 } from '../types/freshdiy';
 import { evaluateBlendStock, HELLOFRESH_PROPRIETARY_BLENDS } from './blendDecoder';
 import { formatAmount, transformIngredient } from './dairyEngine';
+import { getItemStoreLocation, StoreLayout } from './storeLayouts';
 
 export interface ItemQuantityBreakdown {
   freezer: number;
@@ -259,18 +260,88 @@ export function buildAggregatedGroceryList(
 }
 
 /**
- * Formats the aisle-sorted, deduplicated grocery list for the "Send to Valleria" feature.
+ * Formats the grocery list for the "Send to Valleria" feature.
+ * When storeLayout is provided (e.g., Stop & Shop American Legion), groups and sequences
+ * items along the store's exact walking path with aisle and department tags.
  */
 export function formatGroceryListForValleria(
   items: AggregatedGroceryItem[],
   extras: GroceryExtra[],
   isDairyFree: boolean,
-  includeCabinetStruck = false
+  includeCabinetStruck = false,
+  storeLayout?: StoreLayout | null
 ): string {
   const activeItems = items.filter(
     (item) => includeCabinetStruck || !item.isStruckByCabinet
   );
+  const uncheckedExtras = extras.filter((e) => !e.checked);
 
+  // If store layout provided, format in exact progressive walking order
+  if (storeLayout) {
+    interface DepartmentBucket {
+      dept: typeof storeLayout.departments[0];
+      lines: string[];
+    }
+    const deptBuckets = new Map<string, DepartmentBucket>();
+    for (const d of storeLayout.departments) {
+      deptBuckets.set(d.id, { dept: d, lines: [] });
+    }
+
+    for (const item of activeItems) {
+      const loc = getItemStoreLocation(item.name, storeLayout, item.aisle);
+      const bucket = deptBuckets.get(loc.departmentId) || deptBuckets.get('aisle_8_household_paper')!;
+      const dairyTag = item.isSubstitutedDairy ? ' 🌱(DF)' : '';
+      const blendMissingNote =
+        item.blendBreakdown && item.blendBreakdown.missingSpices.length > 0
+          ? ` [Need base spices: ${item.blendBreakdown.missingSpices.join(', ')}]`
+          : '';
+      const lowNote = item.cabinetStatus === 'low' ? ' (Running low in cabinet)' : '';
+      const aisleTag = loc.aisleNumber ? `[Aisle ${loc.aisleNumber}] ` : '';
+      bucket.lines.push(
+        `• ${aisleTag}${formatAmount(item.totalAmount)} ${item.unit} ${item.name}${dairyTag}${blendMissingNote}${lowNote}`
+      );
+    }
+
+    for (const ex of uncheckedExtras) {
+      const loc = getItemStoreLocation(ex.item_name, storeLayout, ex.aisle || 'Household & Extras');
+      const bucket = deptBuckets.get(loc.departmentId) || deptBuckets.get('aisle_8_household_paper')!;
+      const aisleTag = loc.aisleNumber ? `[Aisle ${loc.aisleNumber}] ` : '';
+      bucket.lines.push(`• ${aisleTag}${ex.item_name}${ex.is_recurring ? ' 📌' : ''}`);
+    }
+
+    const lines: string[] = [
+      `🛒 FreshDIY Shopping List for Valleria`,
+      `🏪 ${storeLayout.name}`,
+      `📍 ${storeLayout.address}`,
+      `🚶‍♂️ Sequential Walking Route (Zero Backtracking)`,
+      `👨‍👩‍👧‍👦 Scaled for Family Plan ${isDairyFree ? '• 🌱 Dairy-Free Mode Active' : ''}`,
+      `----------------------------------------`,
+    ];
+
+    const sortedBuckets = Array.from(deptBuckets.values())
+      .filter((b) => b.lines.length > 0)
+      .sort((a, b) => a.dept.sortOrder - b.dept.sortOrder);
+
+    for (const b of sortedBuckets) {
+      const aislePrefix = b.dept.aisleNumber ? `Aisle ${b.dept.aisleNumber}: ` : '';
+      lines.push(`\n📍 STEP ${b.dept.sortOrder}: ${aislePrefix}${b.dept.name.toUpperCase()} (${b.dept.locationLabel})`);
+      if (b.dept.description) {
+        lines.push(`   (${b.dept.description})`);
+      }
+      lines.push(...b.lines);
+    }
+
+    const struckCount = items.filter((i) => i.isStruckByCabinet).length;
+    if (struckCount > 0) {
+      lines.push(
+        `\n✅ (${struckCount} pantry/cabinet items skipped — already in stock at home!)`
+      );
+    }
+
+    return lines.join('\n');
+  }
+
+  // Fallback: Standard Aisle Grouping
   const byAisle = new Map<string, string[]>();
 
   for (const item of activeItems) {
@@ -287,7 +358,6 @@ export function formatGroceryListForValleria(
     byAisle.set(item.aisle, list);
   }
 
-  const uncheckedExtras = extras.filter((e) => !e.checked);
   if (uncheckedExtras.length > 0) {
     for (const ex of uncheckedExtras) {
       const targetAisle = ex.aisle || 'Household & Extras';

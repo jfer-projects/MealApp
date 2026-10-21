@@ -8,14 +8,17 @@ import {
   ClipboardPaste,
   Copy,
   DollarSign,
+  Footprints,
   Heart,
   Mail,
+  MapPin,
   Package,
   Plus,
   Search,
   Share2,
   ShoppingBag,
   Sparkles,
+  Store,
   Trash2,
   User,
   Utensils,
@@ -34,6 +37,7 @@ import { findBlendDefinition } from '../utils/blendDecoder';
 import { formatAmount } from '../utils/dairyEngine';
 import { formatWeekRange } from '../utils/dateUtils';
 import {
+  AggregatedGroceryItem,
   buildAggregatedGroceryList,
   formatGroceryListForValleria,
   ParsedNoteGroceryItem,
@@ -44,6 +48,12 @@ import {
   computeWeeklySavings,
   estimateRecipeNutrition,
 } from '../utils/nutritionCostEngine';
+import {
+  getItemStoreLocation,
+  STOP_AND_SHOP_AMERICAN_LEGION,
+  StoreLayout,
+  SUPPORTED_STORES,
+} from '../utils/storeLayouts';
 
 const AISLE_OPTIONS = [
   'Produce',
@@ -193,6 +203,36 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
     const saved = localStorage.getItem('freshdiy_checkoff_move_pref_v1');
     return saved === 'always' || saved === 'never' ? saved : 'ask';
   });
+
+  // Store Layout & Path Optimization State (Stop & Shop Roslindale / American Legion Hwy)
+  const [selectedStoreId, setSelectedStoreId] = useState<string>(() => {
+    return (
+      localStorage.getItem('freshdiy_selected_store_id_v1') ||
+      STOP_AND_SHOP_AMERICAN_LEGION.id
+    );
+  });
+  const [viewMode, setViewMode] = useState<'walking_path' | 'standard_aisles'>(() => {
+    const saved = localStorage.getItem('freshdiy_grocery_view_mode_v1');
+    return saved === 'standard_aisles' ? 'standard_aisles' : 'walking_path';
+  });
+
+  const selectedStore = useMemo(() => {
+    return (
+      SUPPORTED_STORES.find((s) => s.id === selectedStoreId) ||
+      STOP_AND_SHOP_AMERICAN_LEGION
+    );
+  }, [selectedStoreId]);
+
+  const handleSelectStore = (storeId: string) => {
+    setSelectedStoreId(storeId);
+    localStorage.setItem('freshdiy_selected_store_id_v1', storeId);
+  };
+
+  const handleSelectViewMode = (mode: 'walking_path' | 'standard_aisles') => {
+    setViewMode(mode);
+    localStorage.setItem('freshdiy_grocery_view_mode_v1', mode);
+  };
+
   const [promptItem, setPromptItem] = useState<{
     name: string;
     aisle: string;
@@ -323,9 +363,76 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
       }));
   }, [aggregated, currentWeekExtras]);
 
+  // Group BOTH recipe ingredients AND manual/pasted extras by Stop & Shop Walking Step
+  const walkingSteps = useMemo(() => {
+    return selectedStore.departments
+      .map((dept) => {
+        const recipeItems = aggregated.filter((item) => {
+          const loc = getItemStoreLocation(item.name, selectedStore, item.aisle);
+          return loc.departmentId === dept.id;
+        });
+        const extraItems = currentWeekExtras.filter((ex) => {
+          const loc = getItemStoreLocation(ex.item_name, selectedStore, ex.aisle);
+          return loc.departmentId === dept.id;
+        });
+        const totalItems = recipeItems.length + extraItems.length;
+
+        let completedItems = 0;
+        for (const item of recipeItems) {
+          if (checkedGroceryKeys[item.key] || item.isStruckByCabinet) {
+            completedItems++;
+          }
+        }
+        for (const ex of extraItems) {
+          if (ex.checked) {
+            completedItems++;
+          }
+        }
+
+        return {
+          dept,
+          recipeItems,
+          extraItems,
+          totalItems,
+          completedItems,
+          isFullyCompleted: totalItems > 0 && completedItems === totalItems,
+        };
+      })
+      .filter((step) => step.totalItems > 0)
+      .sort((a, b) => a.dept.sortOrder - b.dept.sortOrder);
+  }, [aggregated, currentWeekExtras, selectedStore, checkedGroceryKeys]);
+
+  const tripStats = useMemo(() => {
+    let totalItems = 0;
+    let collectedItems = 0;
+    let completedDepts = 0;
+    for (const step of walkingSteps) {
+      totalItems += step.totalItems;
+      collectedItems += step.completedItems;
+      if (step.isFullyCompleted) {
+        completedDepts++;
+      }
+    }
+    const percentage = totalItems > 0 ? Math.round((collectedItems / totalItems) * 100) : 0;
+    return {
+      totalItems,
+      collectedItems,
+      completedDepts,
+      totalDepts: walkingSteps.length,
+      percentage,
+    };
+  }, [walkingSteps]);
+
   const smsText = useMemo(
-    () => formatGroceryListForValleria(aggregated, currentWeekExtras, isDairyFree, false),
-    [aggregated, currentWeekExtras, isDairyFree]
+    () =>
+      formatGroceryListForValleria(
+        aggregated,
+        currentWeekExtras,
+        isDairyFree,
+        false,
+        viewMode === 'walking_path' ? selectedStore : undefined
+      ),
+    [aggregated, currentWeekExtras, isDairyFree, viewMode, selectedStore]
   );
 
   // Cost and Nutrition Aggregations
@@ -439,6 +546,204 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
   const cabinetSavedCount = aggregated.filter((i) => i.isStruckByCabinet).length;
   const dairyAltCount = aggregated.filter((i) => i.isSubstitutedDairy).length;
 
+  const renderExtraCard = (ex: GroceryExtra) => {
+    const loc = getItemStoreLocation(ex.item_name, selectedStore, ex.aisle);
+    return (
+      <div
+        key={ex.id}
+        onClick={() => handleCheckExtraItem(ex)}
+        className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-3 ${
+          ex.checked
+            ? 'bg-slate-50 border-slate-200/70 opacity-60'
+            : 'bg-emerald-50/30 border-emerald-200 hover:bg-emerald-50/60'
+        }`}
+      >
+        <div className="flex items-start gap-2.5">
+          <div
+            className={`mt-0.5 w-4 h-4 rounded-md flex items-center justify-center ${
+              ex.checked
+                ? 'bg-emerald-600 text-white'
+                : 'border border-slate-300 bg-white'
+            }`}
+          >
+            {ex.checked && <Check className="w-3 h-3" />}
+          </div>
+
+          <div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                className={`text-sm font-bold ${
+                  ex.checked ? 'line-through text-slate-400' : 'text-slate-900'
+                }`}
+              >
+                {ex.item_name}
+              </span>
+
+              {/* Stop & Shop Exact Location Badge */}
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-150 inline-flex items-center gap-0.5">
+                <MapPin className="w-2.5 h-2.5 text-indigo-500" />
+                {loc.aisleNumber ? `Aisle ${loc.aisleNumber}` : loc.locationLabel}
+              </span>
+
+              <span className="px-1.5 py-0.2 rounded-md text-[10px] font-black bg-slate-100 text-slate-600">
+                {ex.is_recurring ? '📌 Weekly Staple' : 'Added / Note'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onMarkItemInInventory && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMarkItemInInventory(ex.item_name, ex.aisle || 'Household & Extras', 1, 'item');
+              }}
+              className="px-2 py-1 rounded-xl bg-white hover:bg-emerald-100 border border-slate-200 text-slate-600 hover:text-emerald-900 text-[10px] font-extrabold transition cursor-pointer"
+              title="Add to Kitchen Inventory"
+            >
+              ✓ In Stock
+            </button>
+          )}
+          {onToggleExtraRecurring && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleExtraRecurring(ex.id);
+              }}
+              className={`px-2 py-1 rounded-xl text-[10px] font-extrabold border transition cursor-pointer ${
+                ex.is_recurring
+                  ? 'bg-amber-200 border-amber-300 text-amber-950'
+                  : 'bg-white border-slate-200 text-slate-400 hover:text-amber-800'
+              }`}
+              title={
+                ex.is_recurring
+                  ? 'Pinned as Weekly Staple (appears every week)'
+                  : 'Pin as recurring Weekly Staple'
+              }
+            >
+              📌
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteExtra(ex.id);
+            }}
+            className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+            title="Remove item"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderRecipeCard = (item: AggregatedGroceryItem) => {
+    const isChecked = Boolean(checkedGroceryKeys[item.key]);
+    const isCrossed = item.isStruckByCabinet || isChecked;
+    const matchedBlend = findBlendDefinition(
+      item.blendBreakdown?.blendName || item.name
+    );
+    const loc = getItemStoreLocation(item.name, selectedStore, item.aisle);
+
+    return (
+      <div
+        key={item.key}
+        onClick={() => handleCheckRecipeItem(item)}
+        className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-3 ${
+          isCrossed
+            ? 'bg-slate-50 border-slate-200/70 opacity-60'
+            : item.isSubstitutedDairy
+            ? 'bg-teal-50/40 border-teal-200 hover:bg-teal-50'
+            : 'bg-white border-slate-200 hover:border-slate-300'
+        }`}
+      >
+        <div className="flex items-start gap-2.5">
+          <div
+            className={`mt-0.5 w-4 h-4 rounded-md flex items-center justify-center ${
+              isCrossed
+                ? 'bg-emerald-600 text-white'
+                : 'border border-slate-300 bg-white'
+            }`}
+          >
+            {isCrossed && <Check className="w-3 h-3" />}
+          </div>
+
+          <div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span
+                className={`text-sm font-bold ${
+                  isCrossed ? 'line-through text-slate-400' : 'text-slate-900'
+                }`}
+              >
+                {formatAmount(item.totalAmount)} {item.unit} {item.name}
+              </span>
+
+              {/* Stop & Shop Exact Location Badge */}
+              <span className="px-1.5 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-150 inline-flex items-center gap-0.5">
+                <MapPin className="w-2.5 h-2.5 text-indigo-500" />
+                {loc.aisleNumber ? `Aisle ${loc.aisleNumber}` : loc.locationLabel}
+              </span>
+
+              {item.isSubstitutedDairy && (
+                <span className="px-1.5 py-0.2 rounded-md text-[10px] font-black bg-teal-100 text-teal-800">
+                  {item.substitutionNote}
+                </span>
+              )}
+
+              {item.isStruckByCabinet && (
+                <span className="px-1.5 py-0.2 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800">
+                  In Cabinet
+                </span>
+              )}
+
+              {matchedBlend && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenBlendModal(matchedBlend.name);
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-black border border-amber-300 cursor-pointer"
+                >
+                  <Beaker className="w-3 h-3" /> Make {matchedBlend.name}
+                </button>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              For: {item.fromRecipes.join(', ')}
+            </p>
+          </div>
+        </div>
+
+        {!item.isStruckByCabinet && onMarkItemInInventory && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMarkItemInInventory(
+                item.name,
+                item.aisle,
+                Math.ceil(item.totalAmount) || 1,
+                item.unit
+              );
+            }}
+            className="px-2 py-1 rounded-xl bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-900 text-[10px] font-extrabold shrink-0 transition cursor-pointer"
+            title="Already have this in your Fridge/Freezer/Pantry? Mark it in-stock in Kitchen Inventory!"
+          >
+            ✓ Have It
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6 pb-8">
       {/* 1. DATED WEEK NAVIGATION & SHOPPER PROFILE BAR */}
@@ -548,6 +853,59 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
           >
             <Share2 className="w-4 h-4" />
             Send to Valleria
+          </button>
+        </div>
+      </section>
+
+      {/* 🏪 STORE LAYOUT & ROUTE OPTIMIZATION BAR */}
+      <section className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700">
+            <Store className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">
+                Active Store Layout
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
+                Roslindale, MA
+              </span>
+            </div>
+            <h3 className="text-sm font-black text-slate-900">
+              {selectedStore.name}
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              {selectedStore.address} • Zero Backtracking Route
+            </p>
+          </div>
+        </div>
+
+        {/* View Mode Toggle: Walking Route vs Standard Aisles */}
+        <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
+          <button
+            type="button"
+            onClick={() => handleSelectViewMode('walking_path')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
+              viewMode === 'walking_path'
+                ? 'bg-emerald-600 text-white shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Footprints className="w-3.5 h-3.5" />
+            🚶‍♂️ Store Walking Route
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectViewMode('standard_aisles')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
+              viewMode === 'standard_aisles'
+                ? 'bg-emerald-600 text-white shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5" />
+            📦 Standard Aisles
           </button>
         </div>
       </section>
@@ -923,7 +1281,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
         </section>
       </div>
 
-      {/* 4. AISLE-SORTED AGGREGATED RECIPE INGREDIENTS & PASTED NOTE ITEMS */}
+      {/* 4. OPTIMIZED STORE WALKING PATH OR STANDARD AISLES */}
       {combinedAisles.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
           <ShoppingBag className="w-10 h-10 text-slate-300 mx-auto" />
@@ -942,7 +1300,125 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
             📋 Paste Shopping List from Notes
           </button>
         </div>
+      ) : viewMode === 'walking_path' ? (
+        <div className="space-y-5">
+          {/* Walking Path Progress Radar */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white shadow-sm space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-white/10 border border-white/15 text-emerald-300">
+                  <Footprints className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                      Stop &amp; Shop Optimized Route
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400/20 text-emerald-300">
+                      Roslindale
+                    </span>
+                  </div>
+                  <h3 className="text-base font-black">
+                    {tripStats.completedDepts} of {tripStats.totalDepts} Departments Cleared • {tripStats.collectedItems} of {tripStats.totalItems} Items ({tripStats.percentage}%)
+                  </h3>
+                </div>
+              </div>
+              <div className="text-left sm:text-right">
+                <span className="text-xs font-bold text-emerald-200 block">
+                  🚶‍♂️ Entrance ➔ Center Aisles ➔ Back Meat Wall ➔ Frozen ➔ Dairy Last
+                </span>
+                <span className="text-[11px] text-slate-300">
+                  Cold items stay chilled right before checkout
+                </span>
+              </div>
+            </div>
+
+            <div className="w-full bg-white/15 h-2.5 rounded-full overflow-hidden p-0.5">
+              <div
+                className="bg-emerald-400 h-full rounded-full transition-all duration-300"
+                style={{ width: `${tripStats.percentage}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Sequential Department Walk Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+            {walkingSteps.map(
+              ({
+                dept,
+                recipeItems,
+                extraItems,
+                totalItems,
+                completedItems,
+                isFullyCompleted,
+              }) => (
+                <div
+                  key={dept.id}
+                  className={`rounded-3xl border p-4 sm:p-5 bg-white shadow-xs space-y-3 transition ${
+                    isFullyCompleted
+                      ? 'border-emerald-300/80 bg-emerald-50/15'
+                      : dept.id === 'aisle_1_natural'
+                      ? 'border-teal-300 ring-1 ring-teal-500/20'
+                      : 'border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`w-7 h-7 rounded-xl font-black text-xs flex items-center justify-center shrink-0 shadow-2xs ${
+                          isFullyCompleted
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-900 text-white'
+                        }`}
+                      >
+                        {dept.sortOrder}
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                            {dept.name}
+                          </h3>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                            {dept.locationLabel}
+                          </span>
+                          {dept.id === 'dairy_eggs' && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800">
+                              🧊 Grab Cold Last
+                            </span>
+                          )}
+                        </div>
+                        {dept.description && (
+                          <p className="text-[10px] text-slate-500">
+                            {dept.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      {isFullyCompleted ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-600" /> Done
+                        </span>
+                      ) : (
+                        <span className="text-xs font-bold text-slate-400">
+                          {completedItems}/{totalItems}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {extraItems.map(renderExtraCard)}
+                    {recipeItems.map(renderRecipeCard)}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        </div>
       ) : (
+        /* Standard Aisles View */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
           {combinedAisles.map(({ aisle, recipeItems, extraItems }) => (
             <div
@@ -970,171 +1446,8 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
               </div>
 
               <div className="space-y-2">
-                {/* Pasted Note & Manual Extra Items in this Aisle */}
-                {extraItems.map((ex) => (
-                  <div
-                    key={ex.id}
-                    onClick={() => handleCheckExtraItem(ex)}
-                    className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-3 ${
-                      ex.checked
-                        ? 'bg-slate-50 border-slate-200/70 opacity-60'
-                        : 'bg-emerald-50/30 border-emerald-200 hover:bg-emerald-50/60'
-                    }`}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <div
-                        className={`mt-0.5 w-4 h-4 rounded-md flex items-center justify-center ${
-                          ex.checked
-                            ? 'bg-emerald-600 text-white'
-                            : 'border border-slate-300 bg-white'
-                        }`}
-                      >
-                        {ex.checked && <Check className="w-3 h-3" />}
-                      </div>
-
-                      <div>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span
-                            className={`text-sm font-bold ${
-                              ex.checked
-                                ? 'line-through text-slate-400'
-                                : 'text-slate-900'
-                            }`}
-                          >
-                            {ex.item_name}
-                          </span>
-                          <span className="px-1.5 py-0.2 rounded-md text-[10px] font-black bg-slate-100 text-slate-600">
-                            {ex.is_recurring ? '📌 Weekly Staple' : 'Added / Note'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {onMarkItemInInventory && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onMarkItemInInventory(ex.item_name, ex.aisle, 1, 'item');
-                          }}
-                          className="px-2 py-1 rounded-xl bg-white hover:bg-emerald-100 border border-slate-200 text-slate-600 hover:text-emerald-900 text-[10px] font-extrabold transition cursor-pointer"
-                          title="Add to Kitchen Inventory"
-                        >
-                          ✓ In Stock
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteExtra(ex.id);
-                        }}
-                        className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
-                        title="Remove item"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                {/* Recipe-Derived Items in this Aisle */}
-                {recipeItems.map((item) => {
-                  const isChecked = Boolean(checkedGroceryKeys[item.key]);
-                  const isCrossed = item.isStruckByCabinet || isChecked;
-                  const matchedBlend = findBlendDefinition(
-                    item.blendBreakdown?.blendName || item.name
-                  );
-
-                  return (
-                    <div
-                      key={item.key}
-                      onClick={() => handleCheckRecipeItem(item)}
-                      className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-3 ${
-                        isCrossed
-                          ? 'bg-slate-50 border-slate-200/70 opacity-60'
-                          : item.isSubstitutedDairy
-                          ? 'bg-teal-50/40 border-teal-200 hover:bg-teal-50'
-                          : 'bg-white border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-start gap-2.5">
-                        <div
-                          className={`mt-0.5 w-4 h-4 rounded-md flex items-center justify-center ${
-                            isCrossed
-                              ? 'bg-emerald-600 text-white'
-                              : 'border border-slate-300 bg-white'
-                          }`}
-                        >
-                          {isCrossed && <Check className="w-3 h-3" />}
-                        </div>
-
-                        <div>
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span
-                              className={`text-sm font-bold ${
-                                isCrossed
-                                  ? 'line-through text-slate-400'
-                                  : 'text-slate-900'
-                              }`}
-                            >
-                              {formatAmount(item.totalAmount)} {item.unit}{' '}
-                              {item.name}
-                            </span>
-
-                            {item.isSubstitutedDairy && (
-                              <span className="px-1.5 py-0.2 rounded-md text-[10px] font-black bg-teal-100 text-teal-800">
-                                {item.substitutionNote}
-                              </span>
-                            )}
-
-                            {item.isStruckByCabinet && (
-                              <span className="px-1.5 py-0.2 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800">
-                                In Cabinet
-                              </span>
-                            )}
-
-                            {matchedBlend && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOpenBlendModal(matchedBlend.name);
-                                }}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-black border border-amber-300 cursor-pointer"
-                              >
-                                <Beaker className="w-3 h-3" /> Make {matchedBlend.name}
-                              </button>
-                            )}
-                          </div>
-
-                          <p className="text-[11px] text-slate-400 mt-0.5">
-                            For: {item.fromRecipes.join(', ')}
-                          </p>
-                        </div>
-                      </div>
-
-                      {!item.isStruckByCabinet && onMarkItemInInventory && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onMarkItemInInventory(
-                              item.name,
-                              item.aisle,
-                              Math.ceil(item.totalAmount) || 1,
-                              item.unit
-                            );
-                          }}
-                          className="px-2 py-1 rounded-xl bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-900 text-[10px] font-extrabold shrink-0 transition cursor-pointer"
-                          title="Already have this in your Fridge/Freezer/Pantry? Mark it in-stock in Kitchen Inventory!"
-                        >
-                          ✓ Have It
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                {extraItems.map(renderExtraCard)}
+                {recipeItems.map(renderRecipeCard)}
               </div>
             </div>
           ))}
