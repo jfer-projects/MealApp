@@ -40,6 +40,8 @@ interface CookingViewProps {
   servings: ServingsSize;
   isDairyFree: boolean;
   geminiApiKey?: string;
+  currentUserDisplayName?: string;
+  householdMembers?: string[];
   feedbackHistory: RecipeFeedback[];
   recipeRating?: RecipeRating;
   onToggleFavorite?: (recipeId: string) => void;
@@ -71,6 +73,8 @@ export const CookingView: React.FC<CookingViewProps> = ({
   servings,
   isDairyFree,
   geminiApiKey = '',
+  currentUserDisplayName = 'Me',
+  householdMembers = [],
   feedbackHistory,
   recipeRating,
   onToggleFavorite,
@@ -120,9 +124,23 @@ export const CookingView: React.FC<CookingViewProps> = ({
     Record<number, { remaining: number; running: boolean; initial: number }>
   >({});
 
+  const authorOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(
+        [currentUserDisplayName, ...householdMembers]
+          .map((n) => n.trim())
+          .filter(Boolean)
+      )
+    );
+    if (names.length < 2) {
+      names.push('Partner / Family');
+    }
+    return names;
+  }, [currentUserDisplayName, householdMembers]);
+
   // Post-meal AI Feedback & Versioning state
-  const [authorName, setAuthorName] = useState<'Parent' | 'Valleria'>(
-    'Valleria'
+  const [authorName, setAuthorName] = useState<string>(
+    () => authorOptions[0] || 'Family'
   );
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [isForking, setIsForking] = useState(false);
@@ -697,13 +715,14 @@ export const CookingView: React.FC<CookingViewProps> = ({
               <div className="flex flex-col sm:flex-row gap-3">
                 <select
                   value={authorName}
-                  onChange={(e) =>
-                    setAuthorName(e.target.value as 'Parent' | 'Valleria')
-                  }
+                  onChange={(e) => setAuthorName(e.target.value)}
                   className="px-3 py-2 rounded-xl border border-violet-200 bg-white text-xs font-bold text-slate-800"
                 >
-                  <option value="Valleria">Note from Partner / Family Member</option>
-                  <option value="Parent">Note from Me (Parent)</option>
+                  {authorOptions.map((name) => (
+                    <option key={name} value={name}>
+                      Note from {name}
+                    </option>
+                  ))}
                 </select>
 
                 <input

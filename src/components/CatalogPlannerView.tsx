@@ -38,9 +38,9 @@ import { formatAmount, transformIngredient } from '../utils/dairyEngine';
 import { formatWeekRange } from '../utils/dateUtils';
 import { estimateRecipeNutrition } from '../utils/nutritionCostEngine';
 import {
+  buildPantryContext,
   COMMON_FRIDGE_STAPLES,
   evaluateRecipeMatch,
-  rankRecipesByOnHandIngredients,
 } from '../utils/pantryMatcher';
 
 interface CatalogPlannerViewProps {
@@ -124,9 +124,10 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
     [weeklyPlan, activeWeekStartDate]
   );
 
-  // Compute match scores for all recipes
+  // Compute match scores for all recipes using a single pre-computed pantry context
   const matchMap = useMemo(() => {
     const map = new Map<string, ReturnType<typeof evaluateRecipeMatch>>();
+    const ctx = buildPantryContext(onHandFridgeItems, cabinet);
     for (const r of recipes) {
       map.set(
         r.id,
@@ -135,23 +136,36 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
           onHandFridgeItems,
           cabinet,
           defaultServings,
-          isDairyFree
+          isDairyFree,
+          ctx
         )
       );
     }
     return map;
   }, [recipes, onHandFridgeItems, cabinet, defaultServings, isDairyFree]);
 
-  // Top suggested recipes based on Fridge + Cabinet
+  // Top suggested recipes based on Fridge + Cabinet (reusing matchMap without re-evaluating 3,500 recipes)
   const topSuggestions = useMemo(() => {
-    return rankRecipesByOnHandIngredients(
-      recipes,
-      onHandFridgeItems,
-      cabinet,
-      defaultServings,
-      isDairyFree
-    ).slice(0, 4);
-  }, [recipes, onHandFridgeItems, cabinet, defaultServings, isDairyFree]);
+    const latestResults: ReturnType<typeof evaluateRecipeMatch>[] = [];
+    for (const r of recipes) {
+      if (!r.is_latest) continue;
+      const m = matchMap.get(r.id);
+      if (m) latestResults.push(m);
+    }
+    return latestResults
+      .sort((a, b) => {
+        if (onHandFridgeItems.length > 0 && a.fridgeHitCount !== b.fridgeHitCount) {
+          const scoreA = a.fridgeHitCount * 25 + a.matchPercentage;
+          const scoreB = b.fridgeHitCount * 25 + b.matchPercentage;
+          if (scoreB !== scoreA) return scoreB - scoreA;
+        }
+        if (b.matchPercentage !== a.matchPercentage) {
+          return b.matchPercentage - a.matchPercentage;
+        }
+        return a.missingItems.length - b.missingItems.length;
+      })
+      .slice(0, 4);
+  }, [recipes, matchMap, onHandFridgeItems.length]);
 
   const visibleRecipes = useMemo(() => {
     const filtered = recipes

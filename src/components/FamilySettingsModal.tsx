@@ -24,7 +24,7 @@ import {
   joinHouseholdByCode,
   signOut,
 } from '../lib/authService';
-import { supabase } from '../lib/supabase';
+import { saveHouseholdSettingsToCloud } from '../lib/supabase';
 import { HouseholdMember, UserProfile } from '../types/freshdiy';
 
 interface FamilySettingsModalProps {
@@ -125,22 +125,14 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
     }
     onUpdateHellofreshPrice(numPrice);
 
-    if (household?.id) {
-      try {
-        const payload: Record<string, any> = {
-          household_id: household.id,
-          hellofresh_price_per_serving: numPrice,
-          updated_at: new Date().toISOString(),
-        };
-        if (isKeyAuthor) {
-          payload.gemini_api_key = cleanKey || null;
-          payload.gemini_api_key_set_by = cleanKey ? currentUser.id : null;
-        }
-        await supabase.from('household_settings').upsert(payload);
-      } catch (err) {
-        console.warn('Could not save to Supabase household_settings:', err);
-      }
-    }
+    await saveHouseholdSettingsToCloud({
+      householdId: household?.id || null,
+      userId: currentUser.id,
+      geminiApiKey: isKeyAuthor ? cleanKey : undefined,
+      geminiKeyAuthorId: isKeyAuthor ? (cleanKey ? currentUser.id : null) : undefined,
+      hellofreshPrice: numPrice,
+      updateApiKey: isKeyAuthor,
+    });
 
     setSettingsSaved(true);
     setTimeout(() => setSettingsSaved(false), 2500);

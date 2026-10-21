@@ -192,6 +192,10 @@ CREATE POLICY "Household access to grocery_extras"
     USING (household_id IN (SELECT public.my_household_ids()) OR (household_id IS NULL AND user_id = auth.uid()))
     WITH CHECK (household_id IN (SELECT public.my_household_ids()) OR (household_id IS NULL AND user_id = auth.uid()));
 
+/* Household settings: API key author tracking & macro goals */
+ALTER TABLE public.household_settings ADD COLUMN IF NOT EXISTS gemini_api_key_set_by UUID;
+ALTER TABLE public.household_settings ADD COLUMN IF NOT EXISTS macro_goals JSONB;
+
 DROP POLICY IF EXISTS "Members can access their household settings" ON public.household_settings;
 CREATE POLICY "Members can access their household settings"
     ON public.household_settings FOR ALL

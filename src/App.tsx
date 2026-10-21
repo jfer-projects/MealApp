@@ -22,9 +22,11 @@ import { FamilySettingsModal } from './components/FamilySettingsModal';
 import { GroceryView } from './components/GroceryView';
 import { MacroPlannerModal } from './components/MacroPlannerModal';
 import { PhotoScannerModal } from './components/PhotoScannerModal';
-import { fetchUserProfile } from './lib/authService';
+import { fetchUserProfile, getHouseholdMembers } from './lib/authService';
 import {
   checkSupabaseTablesReady,
+  loadHouseholdSettingsFromCloud,
+  saveHouseholdSettingsToCloud,
   subscribeToFamilyRealtime,
   supabase,
   SupabaseSyncStatus,
@@ -47,12 +49,14 @@ import {
 } from './types/freshdiy';
 import { forkRecipeFromFeedback } from './utils/aiVersioningEngine';
 import { DEFAULT_CABINET_ITEMS } from './utils/blendDecoder';
+import { loadBaseCatalogFast } from './utils/catalogCache';
 import { getAdjacentWeek, getMondayOfWeek } from './utils/dateUtils';
 import { forkRecipeWithGemini } from './utils/geminiClient';
 import {
   deductCabinetForCompletedMeals,
   deriveStockStatusFromQuantities,
   getItemQuantities,
+  guessGroceryAisle,
   mergeDuplicateCabinetItems,
 } from './utils/groceryEngine';
 import { rankRecipesByOnHandIngredients } from './utils/pantryMatcher';
@@ -96,11 +100,11 @@ export const App: React.FC = () => {
     return localStorage.getItem(STORAGE_KEYS.activeWeek) || getMondayOfWeek();
   });
 
-  // Family profile toggle: 'Parent' vs 'Valleria'
-  const [activeFamilyMember, setActiveFamilyMember] = useState<'Parent' | 'Valleria'>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.familyMember);
-    return saved === 'Valleria' ? 'Valleria' : 'Parent';
+  // Family profile toggle (dynamic household member name)
+  const [activeFamilyMember, setActiveFamilyMember] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEYS.familyMember) || 'Parent';
   });
+  const [householdMemberNames, setHouseholdMemberNames] = useState<string[]>([]);
 
   const [valleriaEmail, setValleriaEmail] = useState<string>(() => {
     return localStorage.getItem(STORAGE_KEYS.valleriaEmail) || '';
@@ -314,74 +318,67 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Sync Household Settings & Ratings from Supabase (Strictly Scoped to Current Household)
+  // Sync Household Settings, Members & Ratings from Supabase (Strictly Scoped to Current Household & User Account)
   useEffect(() => {
-    if (!currentUser?.household?.id) {
-      // Standalone demo user or signed out — load local demo key if exists
-      const fallbackKey = localStorage.getItem('freshdiy_gemini_api_key_v1') || '';
-      setGeminiApiKey(fallbackKey);
-      return;
+    let cancelled = false;
+    const hId = currentUser?.household?.id || null;
+    const uId = currentUser?.id || null;
+
+    // Fetch household member display names for dynamic shopper & feedback attribution
+    if (hId) {
+      getHouseholdMembers(hId)
+        .then((members) => {
+          if (!cancelled && members.length > 0) {
+            setHouseholdMemberNames(
+              members.map((m) => m.display_name).filter(Boolean)
+            );
+          }
+        })
+        .catch(() => {});
+    } else {
+      setHouseholdMemberNames([]);
     }
-    if (!supaStatus.tablesReady) return;
-    const hId = currentUser.household.id;
 
-    // Load household-scoped cached key first
-    const cachedKey = localStorage.getItem(`freshdiy_gemini_api_key_${hId}`);
-    const cachedAuthor = localStorage.getItem(`freshdiy_gemini_key_author_${hId}`);
-    if (cachedKey) setGeminiApiKey(cachedKey);
-    if (cachedAuthor) setGeminiKeyAuthorId(cachedAuthor);
-
-    supabase
-      .from('household_settings')
-      .select('*')
-      .eq('household_id', hId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) {
-          if (data.gemini_api_key) {
-            setGeminiApiKey(data.gemini_api_key);
-            localStorage.setItem(`freshdiy_gemini_api_key_${hId}`, data.gemini_api_key);
-          } else {
-            setGeminiApiKey('');
-            localStorage.removeItem(`freshdiy_gemini_api_key_${hId}`);
-          }
-          if (data.gemini_api_key_set_by) {
-            setGeminiKeyAuthorId(data.gemini_api_key_set_by);
-            localStorage.setItem(`freshdiy_gemini_key_author_${hId}`, data.gemini_api_key_set_by);
-          } else {
-            setGeminiKeyAuthorId(null);
-            localStorage.removeItem(`freshdiy_gemini_key_author_${hId}`);
-          }
-          if (data.hellofresh_price_per_serving) {
-            setHellofreshPrice(Number(data.hellofresh_price_per_serving));
-            localStorage.setItem('freshdiy_hf_price_v1', String(data.hellofresh_price_per_serving));
-          }
-          if (data.macro_goals) {
-            setMacroGoals(data.macro_goals);
-            localStorage.setItem(STORAGE_KEYS.macroGoals, JSON.stringify(data.macro_goals));
-          }
-        } else {
-          // No settings row for this household yet
-          setGeminiApiKey('');
-          setGeminiKeyAuthorId(null);
-          localStorage.removeItem(`freshdiy_gemini_api_key_${hId}`);
+    // Load cloud settings (household_settings + auth user_metadata + local cache with auto-backfill)
+    loadHouseholdSettingsFromCloud({ householdId: hId, userId: uId }).then(
+      (res) => {
+        if (cancelled) return;
+        setGeminiApiKey(res.geminiApiKey);
+        setGeminiKeyAuthorId(res.geminiKeyAuthorId);
+        if (res.hellofreshPrice !== undefined) {
+          setHellofreshPrice(res.hellofreshPrice);
+          localStorage.setItem('freshdiy_hf_price_v1', String(res.hellofreshPrice));
         }
-      });
-
-    supabase
-      .from('recipe_ratings')
-      .select('*')
-      .eq('household_id', hId)
-      .then(({ data }) => {
-        if (data && data.length > 0) {
-          const nextMap: Record<string, RecipeRating> = {};
-          for (const row of data) {
-            nextMap[row.recipe_id] = row as RecipeRating;
-          }
-          setRatingsMap((prev) => ({ ...prev, ...nextMap }));
+        if (res.macroGoals) {
+          setMacroGoals(res.macroGoals);
+          localStorage.setItem(
+            STORAGE_KEYS.macroGoals,
+            JSON.stringify(res.macroGoals)
+          );
         }
-      });
-  }, [currentUser?.household?.id, supaStatus.tablesReady]);
+      }
+    );
+
+    if (hId && supaStatus.tablesReady) {
+      supabase
+        .from('recipe_ratings')
+        .select('*')
+        .eq('household_id', hId)
+        .then(({ data }) => {
+          if (!cancelled && data && data.length > 0) {
+            const nextMap: Record<string, RecipeRating> = {};
+            for (const row of data) {
+              nextMap[row.recipe_id] = row as RecipeRating;
+            }
+            setRatingsMap((prev) => ({ ...prev, ...nextMap }));
+          }
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, currentUser?.household?.id, supaStatus.tablesReady]);
 
   // Sync Shared In-Store Grocery Checkmarks from Supabase
   useEffect(() => {
@@ -410,8 +407,7 @@ export const App: React.FC = () => {
       setSupaStatus(status);
 
       try {
-        const res = await fetch('/data/hellofresh_recipes.json');
-        const baseCatalog: Recipe[] = await res.json();
+        const baseCatalog: Recipe[] = await loadBaseCatalogFast();
 
         let forkedRecipes: Recipe[] = [];
         const savedForks = localStorage.getItem('freshdiy_forked_recipes_v1');
@@ -428,11 +424,16 @@ export const App: React.FC = () => {
           let cabQuery = supabase.from('cabinet').select('*').order('item_name', { ascending: true });
           let planQuery = supabase.from('weekly_plan').select('*');
           let extraQuery = supabase.from('grocery_extras').select('*').order('created_at', { ascending: true });
+          let forksQuery = supabase.from('recipes').select('*').gt('version', 1).order('version', { ascending: false });
 
           if (householdId) {
-            cabQuery = cabQuery.or(`household_id.eq.${householdId},user_id.eq.${currentUser?.id},household_id.is.null`);
-            planQuery = planQuery.or(`household_id.eq.${householdId},user_id.eq.${currentUser?.id},household_id.is.null`);
-            extraQuery = extraQuery.or(`household_id.eq.${householdId},user_id.eq.${currentUser?.id},household_id.is.null`);
+            cabQuery = cabQuery.or(`household_id.eq.${householdId},user_id.eq.${currentUser?.id}`);
+            planQuery = planQuery.or(`household_id.eq.${householdId},user_id.eq.${currentUser?.id}`);
+            extraQuery = extraQuery.or(`household_id.eq.${householdId},user_id.eq.${currentUser?.id}`);
+          } else if (currentUser?.id) {
+            cabQuery = cabQuery.eq('user_id', currentUser.id);
+            planQuery = planQuery.eq('user_id', currentUser.id);
+            extraQuery = extraQuery.eq('user_id', currentUser.id);
           }
 
           const [
@@ -442,11 +443,7 @@ export const App: React.FC = () => {
             { data: remoteFeedback },
             { data: remoteExtras },
           ] = await Promise.all([
-            supabase
-              .from('recipes')
-              .select('*')
-              .gt('version', 1)
-              .order('version', { ascending: false }),
+            forksQuery,
             cabQuery,
             planQuery,
             supabase
@@ -529,27 +526,34 @@ export const App: React.FC = () => {
   // Multi-device Realtime Sync for Household Members (no paid SMS)
   useEffect(() => {
     if (!supaStatus.tablesReady) return;
+    const hId = currentUser?.household?.id || null;
 
-    const unsubscribe = subscribeToFamilyRealtime(async (table) => {
+    const unsubscribe = subscribeToFamilyRealtime(async (table, payload) => {
       try {
-        const hId = currentUser?.household?.id;
         if (table === 'weekly_plan') {
           let query = supabase.from('weekly_plan').select('*');
-          if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id},household_id.is.null`);
+          if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id}`);
           const { data } = await query;
           if (data) setWeeklyPlan(data as WeeklyPlanItem[]);
         } else if (table === 'cabinet') {
           let query = supabase.from('cabinet').select('*').order('item_name', { ascending: true });
-          if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id},household_id.is.null`);
+          if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id}`);
           const { data } = await query;
           if (data) setCabinet(mergeDuplicateCabinetItems(data as CabinetItem[]));
         } else if (table === 'grocery_extras') {
           let query = supabase.from('grocery_extras').select('*').order('created_at', { ascending: true });
-          if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id},household_id.is.null`);
+          if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id}`);
           const { data } = await query;
           if (data) setExtras(data as GroceryExtra[]);
         } else if (table === 'grocery_checks') {
-          if (hId) {
+          // Zero-latency incremental update if payload.new is present
+          const newRow = payload?.new;
+          if (newRow && typeof newRow.item_key === 'string' && typeof newRow.checked === 'boolean') {
+            setCheckedGroceryKeys((prev) => ({
+              ...prev,
+              [newRow.item_key]: newRow.checked,
+            }));
+          } else if (hId) {
             const { data } = await supabase
               .from('grocery_checks')
               .select('item_key, checked')
@@ -566,21 +570,18 @@ export const App: React.FC = () => {
             }
           }
         } else if (table === 'household_settings') {
-          if (hId) {
-            const { data } = await supabase
-              .from('household_settings')
-              .select('*')
-              .eq('household_id', hId)
-              .maybeSingle();
-            if (data) {
-              if (data.gemini_api_key) setGeminiApiKey(data.gemini_api_key);
-              if (data.gemini_api_key_set_by) setGeminiKeyAuthorId(data.gemini_api_key_set_by);
-              if (data.hellofresh_price_per_serving) setHellofreshPrice(Number(data.hellofresh_price_per_serving));
-              if (data.macro_goals) {
-                setMacroGoals(data.macro_goals);
-                localStorage.setItem(STORAGE_KEYS.macroGoals, JSON.stringify(data.macro_goals));
-              }
-            }
+          const settings = await loadHouseholdSettingsFromCloud({
+            householdId: hId,
+            userId: currentUser?.id,
+          });
+          setGeminiApiKey(settings.geminiApiKey);
+          setGeminiKeyAuthorId(settings.geminiKeyAuthorId);
+          if (settings.hellofreshPrice !== undefined) {
+            setHellofreshPrice(settings.hellofreshPrice);
+          }
+          if (settings.macroGoals) {
+            setMacroGoals(settings.macroGoals);
+            localStorage.setItem(STORAGE_KEYS.macroGoals, JSON.stringify(settings.macroGoals));
           }
         } else if (table === 'recipe_ratings') {
           if (hId) {
@@ -600,7 +601,7 @@ export const App: React.FC = () => {
       } catch (err) {
         console.error('Realtime update refresh error:', err);
       }
-    });
+    }, hId);
 
     return () => {
       unsubscribe();
@@ -879,17 +880,11 @@ export const App: React.FC = () => {
   const handleSaveMacroGoals = async (newGoals: MacroGoals) => {
     setMacroGoals(newGoals);
     localStorage.setItem(STORAGE_KEYS.macroGoals, JSON.stringify(newGoals));
-    if (currentUser?.household?.id && supaStatus.tablesReady) {
-      try {
-        await supabase.from('household_settings').upsert({
-          household_id: currentUser.household.id,
-          macro_goals: newGoals,
-          updated_at: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.warn('Failed to sync macro goals to household_settings:', err);
-      }
-    }
+    await saveHouseholdSettingsToCloud({
+      householdId: currentUser?.household?.id || null,
+      userId: currentUser?.id || null,
+      macroGoals: newGoals,
+    });
   };
 
   const handleAddMacroMealToPlan = async (
@@ -916,20 +911,26 @@ export const App: React.FC = () => {
         image_url:
           'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
         ingredients_json: [
-          ...suggestion.ingredientsFromHome.map((name) => ({
-            name,
-            amount: 1,
-            unit: 'portion',
-            aisle: 'Spices & Pantry',
-            is_pantry_staple: true,
-          })),
-          ...suggestion.ingredientsToBuy.map((name) => ({
-            name,
-            amount: 1,
-            unit: 'portion',
-            aisle: 'Produce',
-            is_pantry_staple: false,
-          })),
+          ...suggestion.ingredientsFromHome.map((rawName) => {
+            const cleanName = rawName.replace(/\s*\([^)]*\)\s*$/, '').trim();
+            return {
+              name: cleanName,
+              amount: 1,
+              unit: 'portion',
+              aisle: guessGroceryAisle(cleanName),
+              is_pantry_staple: true,
+            };
+          }),
+          ...suggestion.ingredientsToBuy.map((rawName) => {
+            const cleanName = rawName.replace(/\s*\([^)]*\)\s*$/, '').trim();
+            return {
+              name: cleanName,
+              amount: 1,
+              unit: 'portion',
+              aisle: guessGroceryAisle(cleanName),
+              is_pantry_staple: false,
+            };
+          }),
         ],
         instructions_json: [
           {
@@ -1811,6 +1812,8 @@ export const App: React.FC = () => {
             onNavigateWeek={handleNavigateWeek}
             activeFamilyMember={activeFamilyMember}
             onChangeFamilyMember={setActiveFamilyMember}
+            currentUserDisplayName={currentUser.display_name}
+            householdMembers={householdMemberNames}
             valleriaEmail={valleriaEmail}
             onSetValleriaEmail={setValleriaEmail}
             valleriaPhone={valleriaPhone}
@@ -1932,6 +1935,8 @@ export const App: React.FC = () => {
             servings={cookingServings}
             isDairyFree={isDairyFree}
             geminiApiKey={geminiApiKey}
+            currentUserDisplayName={currentUser.display_name}
+            householdMembers={householdMemberNames}
             feedbackHistory={activeRecipeFeedback}
             recipeRating={
               ratingsMap[activeCookingRecipe.original_id || activeCookingRecipe.id] ||
@@ -2075,31 +2080,30 @@ export const App: React.FC = () => {
         isKeyAuthor={isKeyAuthor}
         hasFamilyKey={Boolean(geminiApiKey && geminiApiKey.trim())}
         onUpdateGeminiApiKey={(k) => {
-          setGeminiApiKey(k);
+          const cleanKey = k.trim();
+          setGeminiApiKey(cleanKey);
           setGeminiKeyAuthorId(currentUser?.id || null);
           const hId = currentUser?.household?.id;
           const storageKey = hId
             ? `freshdiy_gemini_api_key_${hId}`
             : 'freshdiy_gemini_api_key_v1';
-          if (k) {
-            localStorage.setItem(storageKey, k);
+          if (cleanKey) {
+            localStorage.setItem(storageKey, cleanKey);
+            localStorage.setItem('freshdiy_gemini_api_key_v1', cleanKey);
             if (currentUser?.id) {
               localStorage.setItem(`freshdiy_gemini_key_author_${hId || 'default'}`, currentUser.id);
             }
           } else {
             localStorage.removeItem(storageKey);
+            localStorage.removeItem('freshdiy_gemini_api_key_v1');
           }
-          if (currentUser?.household?.id) {
-            supabase
-              .from('household_settings')
-              .upsert({
-                household_id: currentUser.household.id,
-                gemini_api_key: k || null,
-                gemini_api_key_set_by: k ? currentUser.id : null,
-                updated_at: new Date().toISOString(),
-              })
-              .then(() => {}, () => {});
-          }
+          saveHouseholdSettingsToCloud({
+            householdId: hId || null,
+            userId: currentUser?.id || null,
+            geminiApiKey: cleanKey,
+            geminiKeyAuthorId: cleanKey ? currentUser?.id || null : null,
+            updateApiKey: true,
+          }).catch(() => {});
         }}
         onOpenFamilySettings={() => setIsFamilyModalOpen(true)}
         onClose={() =>
@@ -2162,19 +2166,22 @@ export const App: React.FC = () => {
         geminiApiKey={geminiApiKey}
         isKeyAuthor={isKeyAuthor}
         onUpdateGeminiApiKey={(k) => {
-          setGeminiApiKey(k);
+          const cleanKey = k.trim();
+          setGeminiApiKey(cleanKey);
           setGeminiKeyAuthorId(currentUser?.id || null);
           const hId = currentUser?.household?.id;
           const storageKey = hId
             ? `freshdiy_gemini_api_key_${hId}`
             : 'freshdiy_gemini_api_key_v1';
-          if (k) {
-            localStorage.setItem(storageKey, k);
+          if (cleanKey) {
+            localStorage.setItem(storageKey, cleanKey);
+            localStorage.setItem('freshdiy_gemini_api_key_v1', cleanKey);
             if (currentUser?.id) {
               localStorage.setItem(`freshdiy_gemini_key_author_${hId || 'default'}`, currentUser.id);
             }
           } else {
             localStorage.removeItem(storageKey);
+            localStorage.removeItem('freshdiy_gemini_api_key_v1');
           }
         }}
         hellofreshPrice={hellofreshPrice}

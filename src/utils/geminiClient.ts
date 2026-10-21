@@ -1,6 +1,71 @@
+import { supabase } from '../lib/supabase';
 import { CabinetItem, MacroGoals, MacroMealSuggestion, Recipe } from '../types/freshdiy';
 
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3.8-flash'];
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+
+/**
+ * Calls Google Gemini either via the server proxy `/api/gemini` (when using a masked
+ * household token or server proxy) or directly against the Google Generative Language API.
+ */
+async function callGeminiModel(params: {
+  model: string;
+  apiKey: string;
+  contents: any[];
+  generationConfig: Record<string, any>;
+}): Promise<any> {
+  const { model, apiKey, contents, generationConfig } = params;
+  const cleanKey = apiKey.trim();
+
+  // If the key is a masked household reference (or proxy is preferred), try `/api/gemini` first
+  if (cleanKey.startsWith('HOUSEHOLD_SHARED:')) {
+    const householdId = cleanKey.slice('HOUSEHOLD_SHARED:'.length);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+
+    const proxyRes = await fetch('/api/gemini', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        model,
+        householdId,
+        contents,
+        generationConfig,
+      }),
+    });
+
+    if (proxyRes.ok) {
+      return proxyRes.json();
+    }
+    const errText = await proxyRes.text();
+    throw new Error(`Gemini Proxy error (${proxyRes.status}): ${errText}`);
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
+    cleanKey
+  )}`;
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents,
+      generationConfig: {
+        responseMimeType: 'application/json',
+        ...generationConfig,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text();
+    throw new Error(`Gemini API error (${res.status}): ${errorBody}`);
+  }
+
+  return res.json();
+}
 
 /**
  * Converts a browser File to base64 for Gemini API payload
@@ -54,40 +119,27 @@ Do not include markdown code block quotes, just the raw JSON array.`;
 
   for (const model of GEMINI_MODELS) {
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-        apiKey.trim()
-      )}`;
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: base64Data,
-                  },
+      const json = await callGeminiModel({
+        model,
+        apiKey,
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              {
+                inline_data: {
+                  mime_type: mimeType,
+                  data: base64Data,
                 },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 1024,
+              },
+            ],
           },
-        }),
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 1024,
+        },
       });
-
-      if (!res.ok) {
-        const errorBody = await res.text();
-        throw new Error(`Gemini API error (${res.status}): ${errorBody}`);
-      }
-
-      const json = await res.json();
       const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
@@ -147,27 +199,15 @@ Do not wrap in markdown quotes. Just return the JSON.`;
 
   for (const model of GEMINI_MODELS) {
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-        apiKey.trim()
-      )}`;
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 2048,
-          },
-        }),
+      const json = await callGeminiModel({
+        model,
+        apiKey,
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 2048,
+        },
       });
-
-      if (!res.ok) {
-        throw new Error(`Gemini LLM error: ${res.statusText}`);
-      }
-
-      const json = await res.json();
       const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
       const result = JSON.parse(cleanJson);
@@ -297,27 +337,15 @@ Do not wrap in markdown quotes. Just return the raw JSON array.`;
 
   for (const model of GEMINI_MODELS) {
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-        apiKey.trim()
-      )}`;
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 2048,
-          },
-        }),
+      const json = await callGeminiModel({
+        model,
+        apiKey,
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 2048,
+        },
       });
-
-      if (!res.ok) {
-        throw new Error(`Gemini LLM error: ${res.statusText}`);
-      }
-
-      const json = await res.json();
       const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleanJson);

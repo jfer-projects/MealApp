@@ -74,8 +74,10 @@ interface GroceryViewProps {
   defaultServings: ServingsSize;
   activeWeekStartDate: string;
   onNavigateWeek: (offset: number) => void;
-  activeFamilyMember: 'Parent' | 'Valleria';
-  onChangeFamilyMember: (member: 'Parent' | 'Valleria') => void;
+  activeFamilyMember: string;
+  onChangeFamilyMember: (member: string) => void;
+  currentUserDisplayName?: string;
+  householdMembers?: string[];
   valleriaEmail: string;
   onSetValleriaEmail: (email: string) => void;
   valleriaPhone: string;
@@ -120,6 +122,8 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
   onNavigateWeek,
   activeFamilyMember,
   onChangeFamilyMember,
+  currentUserDisplayName = 'Me',
+  householdMembers = [],
   valleriaEmail,
   onSetValleriaEmail,
   valleriaPhone,
@@ -777,32 +781,43 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
           </div>
         </div>
 
-        {/* Shopper Mode Selector (You vs Valleria) */}
+        {/* Shopper Mode Selector (Dynamic Household Members) */}
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
             <span className="text-[11px] font-bold text-slate-500 px-2 flex items-center gap-1">
               <User className="w-3 h-3" /> Shopping As:
             </span>
-            <button
-              onClick={() => onChangeFamilyMember('Parent')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
-                activeFamilyMember === 'Parent'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              You (Parent)
-            </button>
-            <button
-              onClick={() => onChangeFamilyMember('Valleria')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
-                activeFamilyMember === 'Valleria'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Partner / Family
-            </button>
+            {(() => {
+              const shopperOptions = Array.from(
+                new Set(
+                  [currentUserDisplayName, ...householdMembers]
+                    .map((n) => n.trim())
+                    .filter(Boolean)
+                )
+              );
+              if (shopperOptions.length < 2) {
+                shopperOptions.push('Partner / Family');
+              }
+              return shopperOptions.map((memberName) => {
+                const isSelected =
+                  activeFamilyMember === memberName ||
+                  (activeFamilyMember === 'Parent' && memberName === shopperOptions[0]) ||
+                  (activeFamilyMember === 'Valleria' && memberName === shopperOptions[1]);
+                return (
+                  <button
+                    key={memberName}
+                    onClick={() => onChangeFamilyMember(memberName)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {memberName === currentUserDisplayName ? `${memberName} (You)` : memberName}
+                  </button>
+                );
+              });
+            })()}
           </div>
 
           {/* Check-off Inventory Transfer Preference */}
