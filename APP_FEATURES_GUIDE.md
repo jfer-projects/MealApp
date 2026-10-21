@@ -90,3 +90,21 @@
 
 - **Post-Meal Family Feedback**: Log feedback after dinner (e.g., *"Too salty"*, *"Kids loved it, make it spicier next time"*, *"Cut garlic by 50%"*).
 - **Automated Versioning (v1 ➔ v2 ➔ v3)**: Gemini AI forks the recipe JSON, scales the ingredients, updates the instruction steps, and publishes the new version as your family's default!
+
+---
+
+## 8. 🎯 Macro AI Kitchen Planner & High-Protein Meal Generator
+
+- **Target Goals Fine-Tuning**: Set daily or dinner macro targets (Calories, Protein in grams, Net Carbs in grams, and Healthy Fats in grams) with interactive sliders and a live macronutrient ratio visualizer.
+- **Quick Nutrition Presets**:
+  - 🥩 **High Protein**: 48g+ protein, 620 kcal, 45g carbs, 18g fat (lean muscle building & retention).
+  - 🔥 **Cut / Deficit**: 42g protein, 480 kcal, 35g carbs, 14g fat (high satiety, fat loss focus).
+  - 🥑 **Keto / Low Carb**: 40g protein, 640 kcal, 16g carbs, 42g fat (ketogenic & low carb fuel).
+  - ⚖️ **Balanced Energy**: 36g protein, 650 kcal, 65g carbs, 22g fat (wholesome daily fuel).
+  - 🏋️ **Lean Bulk / Mass**: 55g protein, 820 kcal, 90g carbs, 26g fat (surplus energy for heavy training).
+- **Inventory-First Kitchen Matching**:
+  - Prompts Google Gemini with your current **Freezer, Refrigerator, and Pantry inventory** plus allergen / dairy-free flags.
+  - Generates 3 delicious, tailored dinner ideas that **maximize ingredients already in your house** (0 extra cost) and isolates the exact items you need to pick up from the grocery store.
+- **1-Tap Add to Plan**: Add any suggested meal directly to Monday–Sunday dinner. Synthesizes a full recipe with scaled ingredients and instructions, automatically placing any needed store items directly on your Stop & Shop walking list!
+- **Catalog Quick Filters & Card Badges**: Filter recipes with 1 click by `🥩 High Protein (>35g)` and `🔥 Under 600 Cal`, with macro badges (`🔥 640 kcal • 🥩 42g P • 🌾 62g C • 🥑 24g F`) directly visible on every recipe card.
+- **Offline Rule-Based Fallback**: Works seamlessly even without an AI key by running a macro distance algorithm on the 3,500+ catalog recipes.

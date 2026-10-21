@@ -10,6 +10,7 @@ import {
   RefreshCw,
   ShoppingCart,
   Sparkles,
+  Target,
   Users,
 } from 'lucide-react';
 import { AuthScreen } from './components/AuthScreen';
@@ -19,6 +20,7 @@ import { CatalogPlannerView } from './components/CatalogPlannerView';
 import { CookingView } from './components/CookingView';
 import { FamilySettingsModal } from './components/FamilySettingsModal';
 import { GroceryView } from './components/GroceryView';
+import { MacroPlannerModal } from './components/MacroPlannerModal';
 import { PhotoScannerModal } from './components/PhotoScannerModal';
 import { fetchUserProfile } from './lib/authService';
 import {
@@ -33,6 +35,8 @@ import {
   DayOfWeek,
   DAYS_OF_WEEK,
   GroceryExtra,
+  MacroGoals,
+  MacroMealSuggestion,
   Recipe,
   RecipeFeedback,
   RecipeRating,
@@ -70,6 +74,7 @@ const STORAGE_KEYS = {
   activeWeek: 'freshdiy_active_week_v1',
   checkedGroceryKeys: 'freshdiy_checked_grocery_keys_v1',
   fridgeItems: 'freshdiy_fridge_items_v1',
+  macroGoals: 'freshdiy_macro_goals_v1',
 };
 
 function generateUuid(): string {
@@ -195,6 +200,20 @@ export const App: React.FC = () => {
   const [hellofreshPrice, setHellofreshPrice] = useState<number>(() => {
     const saved = localStorage.getItem('freshdiy_hf_price_v1');
     return saved ? parseFloat(saved) : 11.49;
+  });
+
+  // Macro Goals State
+  const [isMacroModalOpen, setIsMacroModalOpen] = useState<boolean>(false);
+  const [macroGoals, setMacroGoals] = useState<MacroGoals | null>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.macroGoals);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+    return null;
   });
 
   const isKeyAuthor = useMemo(() => {
@@ -336,6 +355,10 @@ export const App: React.FC = () => {
           if (data.hellofresh_price_per_serving) {
             setHellofreshPrice(Number(data.hellofresh_price_per_serving));
             localStorage.setItem('freshdiy_hf_price_v1', String(data.hellofresh_price_per_serving));
+          }
+          if (data.macro_goals) {
+            setMacroGoals(data.macro_goals);
+            localStorage.setItem(STORAGE_KEYS.macroGoals, JSON.stringify(data.macro_goals));
           }
         } else {
           // No settings row for this household yet
@@ -553,6 +576,10 @@ export const App: React.FC = () => {
               if (data.gemini_api_key) setGeminiApiKey(data.gemini_api_key);
               if (data.gemini_api_key_set_by) setGeminiKeyAuthorId(data.gemini_api_key_set_by);
               if (data.hellofresh_price_per_serving) setHellofreshPrice(Number(data.hellofresh_price_per_serving));
+              if (data.macro_goals) {
+                setMacroGoals(data.macro_goals);
+                localStorage.setItem(STORAGE_KEYS.macroGoals, JSON.stringify(data.macro_goals));
+              }
             }
           }
         } else if (table === 'recipe_ratings') {
@@ -847,6 +874,91 @@ export const App: React.FC = () => {
     showToast(
       `✨ Added ${chosen.length} high-match dinners to your week (${openDays.slice(0, chosen.length).map((d) => d.slice(0, 3)).join(', ')})!`
     );
+  };
+
+  const handleSaveMacroGoals = async (newGoals: MacroGoals) => {
+    setMacroGoals(newGoals);
+    localStorage.setItem(STORAGE_KEYS.macroGoals, JSON.stringify(newGoals));
+    if (currentUser?.household?.id && supaStatus.tablesReady) {
+      try {
+        await supabase.from('household_settings').upsert({
+          household_id: currentUser.household.id,
+          macro_goals: newGoals,
+          updated_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn('Failed to sync macro goals to household_settings:', err);
+      }
+    }
+  };
+
+  const handleAddMacroMealToPlan = async (
+    suggestion: MacroMealSuggestion,
+    day: DayOfWeek,
+    servings: ServingsSize
+  ) => {
+    let targetRecipeId = suggestion.matchedRecipeId;
+    const existing = targetRecipeId ? recipes.find((r) => r.id === targetRecipeId) : null;
+
+    if (!existing) {
+      const synthesizedId = `macro-${Date.now()}`;
+      const newRecipe: Recipe = {
+        id: synthesizedId,
+        version: 1,
+        original_id: synthesizedId,
+        title: suggestion.title,
+        subtitle:
+          suggestion.subtitle ||
+          `${suggestion.nutrition.proteinGrams}g Protein • ${suggestion.nutrition.calories} kcal`,
+        prep_time: suggestion.prepTimeMinutes || 30,
+        base_servings: servings,
+        tags: ['Macro AI', 'High Protein'],
+        image_url:
+          'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
+        ingredients_json: [
+          ...suggestion.ingredientsFromHome.map((name) => ({
+            name,
+            amount: 1,
+            unit: 'portion' as const,
+            is_pantry_staple: true,
+          })),
+          ...suggestion.ingredientsToBuy.map((name) => ({
+            name,
+            amount: 1,
+            unit: 'portion' as const,
+            is_pantry_staple: false,
+          })),
+        ],
+        instructions_json: [
+          {
+            step: 1,
+            text:
+              suggestion.cookingSummary ||
+              'Prepare on-hand and fresh ingredients according to macro targets.',
+          },
+          {
+            step: 2,
+            text:
+              'Sear or roast proteins and assemble with wholesome carbs and produce to balance portions.',
+          },
+          {
+            step: 3,
+            text: `Plate into ${servings} portions. Delivers ~${suggestion.nutrition.proteinGrams}g protein per plate!`,
+          },
+        ],
+        is_latest: true,
+      };
+
+      setRecipes((prev) => [newRecipe, ...prev]);
+      targetRecipeId = synthesizedId;
+    }
+
+    if (targetRecipeId) {
+      await handleAddToPlan(targetRecipeId, day, servings);
+      showToast(
+        `🎯 Added "${suggestion.title}" to ${day} Dinner (${suggestion.nutrition.proteinGrams}g Protein)!`
+      );
+    }
   };
 
   const handleUpdatePlanServings = async (planId: string, servings: ServingsSize) => {
@@ -1511,6 +1623,15 @@ export const App: React.FC = () => {
             </button>
 
             <button
+              onClick={() => setIsMacroModalOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs transition cursor-pointer"
+              title="Set macro targets & let Gemini suggest meals from what's in your house"
+            >
+              <Target className="w-3.5 h-3.5 text-white" />
+              <span>Macro</span>
+            </button>
+
+            <button
               onClick={() => setIsDairyFree(!isDairyFree)}
               className={`inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
                 isDairyFree
@@ -1611,6 +1732,7 @@ export const App: React.FC = () => {
             onMovePlanDay={handleMovePlanDay}
             onRemoveFromPlan={handleRemoveFromPlan}
             onFillMyWeek={handleFillMyWeek}
+            onOpenMacroPlanner={() => setIsMacroModalOpen(true)}
             onCompleteWeeklyPlan={handleCompleteWeeklyPlan}
             ratingsMap={ratingsMap}
             onToggleFavorite={handleToggleFavorite}
@@ -2004,6 +2126,22 @@ export const App: React.FC = () => {
           );
           setActiveTab('catalog');
         }}
+      />
+
+      {/* Macro AI Kitchen Planner Modal */}
+      <MacroPlannerModal
+        isOpen={isMacroModalOpen}
+        onClose={() => setIsMacroModalOpen(false)}
+        cabinet={cabinet}
+        onHandFridgeItems={effectiveOnHandFridgeItems}
+        recipes={recipes}
+        isDairyFree={isDairyFree}
+        geminiApiKey={geminiApiKey}
+        defaultServings={defaultServings}
+        initialMacroGoals={macroGoals}
+        onSaveMacroGoals={handleSaveMacroGoals}
+        onAddMacroMealToPlan={handleAddMacroMealToPlan}
+        onOpenFamilySettings={() => setIsFamilyModalOpen(true)}
       />
 
       {/* Family Settings & Account Modal */}

@@ -1,4 +1,4 @@
-import { CabinetItem, Recipe } from '../types/freshdiy';
+import { CabinetItem, MacroGoals, MacroMealSuggestion, Recipe } from '../types/freshdiy';
 
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3.8-flash'];
 
@@ -207,4 +207,151 @@ function normalizeCategory(cat: string): CabinetItem['category'] {
   if (c.includes('oil') || c.includes('vinegar')) return 'Oils & Vinegars';
   if (c.includes('spice') || c.includes('season') || c.includes('herb')) return 'Spices';
   return 'Pantry';
+}
+
+/**
+ * Suggests tailored meals matching a user's exact macro goals (Calories, Protein, Carbs, Fat)
+ * while heavily prioritizing ingredients already present in their Freezer, Fridge, and Pantry.
+ */
+export async function suggestMacroMealsWithGemini(params: {
+  macroGoals: MacroGoals;
+  onHandItems: {
+    freezer: string[];
+    fridge: string[];
+    pantry: string[];
+  };
+  isDairyFree: boolean;
+  apiKey: string;
+  catalogRecipes?: Recipe[];
+}): Promise<MacroMealSuggestion[]> {
+  const { macroGoals, onHandItems, isDairyFree, apiKey, catalogRecipes = [] } = params;
+
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('Gemini API key is required to run AI Macro Meal Generation.');
+  }
+
+  const catalogContext = catalogRecipes.slice(0, 25).map((r) => ({
+    id: r.id,
+    title: r.title,
+    prep: r.prep_time,
+  }));
+
+  const prompt = `You are an elite sports nutritionist and Michelin-trained meal-prep chef.
+A user has specific nutritional macro targets and wants 3 distinct, delicious dinner ideas that MAXIMIZE the use of ingredients already in their house to eliminate extra grocery cost and waste.
+
+TARGET MACROS (per serving):
+- Target Calories: ~${macroGoals.calories} kcal
+- Target Protein: >= ${macroGoals.proteinGrams}g
+- Target Net Carbs: ~${macroGoals.carbsGrams}g
+- Target Fats: ~${macroGoals.fatGrams}g
+- Diet Style / Focus: ${macroGoals.dietType || 'balanced'}
+- Allergen Rule: ${
+    isDairyFree
+      ? 'DAIRY-FREE ACTIVE (Do not use cow milk, butter, or standard dairy cheese - use plant butter, oat milk, or olive oil)'
+      : 'None'
+  }
+
+INGREDIENTS CURRENTLY AVAILABLE AT HOME:
+- Deep Freezer / Freezer: ${onHandItems.freezer.length > 0 ? onHandItems.freezer.join(', ') : 'None specified'}
+- Refrigerator: ${onHandItems.fridge.length > 0 ? onHandItems.fridge.join(', ') : 'None specified'}
+- Pantry & Spices in Stock: ${onHandItems.pantry.length > 0 ? onHandItems.pantry.join(', ') : 'None specified'}
+
+AVAILABLE CATALOG RECIPES (you can match or adapt one of these if fitting, or generate a tailored custom meal):
+${JSON.stringify(catalogContext)}
+
+YOUR TASK:
+Provide exactly 3 distinct, high-protein or macro-aligned dinner suggestions.
+For each meal:
+1. Hit the target macros as closely as possible (accurately calculate calories, proteinGrams, carbsGrams, fatGrams, fiberGrams per serving).
+2. Prioritize the on-hand ingredients in their Freezer, Fridge, and Pantry.
+3. List which ingredients come from home ("ingredientsFromHome") and which minimal extra items they'd need to buy from the store ("ingredientsToBuy").
+4. Provide 2-3 concise "macroHighlights" (e.g. "48g High Protein", "Hits 620 kcal target", "Low Net Carbs").
+5. Provide a 2-sentence cookingSummary on how to prepare it.
+6. Provide a macroMatchScore (integer 85-99%) based on how well it satisfies their targets.
+7. If this adapts a known catalog recipe, include its "matchedRecipeId", otherwise omit or set null.
+
+Return ONLY a valid JSON array of 3 objects with this exact structure:
+[
+  {
+    "id": "macro-1",
+    "title": "Lemon Garlic Herbed Chicken Breast & Crispy Potatoes",
+    "subtitle": "High-protein skillet with pan sauce",
+    "matchedRecipeId": null,
+    "prepTimeMinutes": 25,
+    "nutrition": {
+      "calories": 620,
+      "proteinGrams": 46,
+      "carbsGrams": 42,
+      "fatGrams": 18,
+      "fiberGrams": 6
+    },
+    "macroMatchScore": 96,
+    "macroHighlights": ["46g Protein", "Hits 620 kcal target", "Low Saturated Fat"],
+    "ingredientsFromHome": ["Chicken Breast (Freezer)", "Garlic Powder (Pantry)", "Olive Oil (Pantry)"],
+    "ingredientsToBuy": ["Fresh Lemons", "Yukon Gold Potatoes"],
+    "cookingSummary": "Pan-sear seasoned chicken breasts in olive oil until golden. Toss cubed potatoes with rosemary and garlic, roasting until crisp."
+  }
+]
+Do not wrap in markdown quotes. Just return the raw JSON array.`;
+
+  for (const model of GEMINI_MODELS) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
+        apiKey.trim()
+      )}`;
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 2048,
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Gemini LLM error: ${res.statusText}`);
+      }
+
+      const json = await res.json();
+      const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item: any, idx: number) => ({
+          id: item.id || `macro-sugg-${idx}-${Date.now()}`,
+          title: String(item.title || 'High-Protein Skillet'),
+          subtitle: String(item.subtitle || 'Custom macro-balanced dinner'),
+          matchedRecipeId: item.matchedRecipeId || undefined,
+          prepTimeMinutes: Number(item.prepTimeMinutes) || 30,
+          nutrition: {
+            calories: Number(item.nutrition?.calories) || macroGoals.calories,
+            proteinGrams: Number(item.nutrition?.proteinGrams) || macroGoals.proteinGrams,
+            carbsGrams: Number(item.nutrition?.carbsGrams) || macroGoals.carbsGrams,
+            fatGrams: Number(item.nutrition?.fatGrams) || macroGoals.fatGrams,
+            fiberGrams: Number(item.nutrition?.fiberGrams) || 5,
+          },
+          macroMatchScore: Math.min(100, Math.max(70, Number(item.macroMatchScore) || 92)),
+          macroHighlights: Array.isArray(item.macroHighlights)
+            ? item.macroHighlights
+            : [`${item.nutrition?.proteinGrams || macroGoals.proteinGrams}g Protein`],
+          ingredientsFromHome: Array.isArray(item.ingredientsFromHome)
+            ? item.ingredientsFromHome
+            : [],
+          ingredientsToBuy: Array.isArray(item.ingredientsToBuy)
+            ? item.ingredientsToBuy
+            : [],
+          cookingSummary: String(item.cookingSummary || 'Cook according to instructions.'),
+        }));
+      }
+    } catch {
+      // Fallback to next model
+    }
+  }
+
+  throw new Error('Gemini could not generate macro meal suggestions. Please try again.');
 }

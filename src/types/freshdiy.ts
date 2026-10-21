@@ -151,6 +151,36 @@ export interface HouseholdMember {
 
 export type DietaryFlag = 'nut_free' | 'vegetarian' | 'pescatarian' | 'gluten_free' | 'pork_free';
 
+export interface MacroGoals {
+  calories: number; // e.g. 650
+  proteinGrams: number; // e.g. 45
+  carbsGrams: number; // e.g. 50
+  fatGrams: number; // e.g. 22
+  dietType?: 'balanced' | 'high_protein' | 'keto_low_carb' | 'deficit_cut' | 'lean_bulk';
+}
+
+export interface MacroMealSuggestion {
+  id: string;
+  title: string;
+  subtitle: string;
+  matchedRecipeId?: string;
+  prepTimeMinutes: number;
+  nutrition: {
+    calories: number;
+    proteinGrams: number;
+    carbsGrams: number;
+    fatGrams: number;
+    fiberGrams: number;
+  };
+  macroMatchScore: number;
+  macroHighlights: string[];
+  ingredientsFromHome: string[];
+  ingredientsToBuy: string[];
+  cookingSummary: string;
+  ingredients_json?: Recipe['ingredients_json'];
+  instructions_json?: Recipe['instructions_json'];
+}
+
 /** Household-wide settings shared by every member (stored in public.household_settings) */
 export interface HouseholdSettings {
   household_id: string;
@@ -161,6 +191,7 @@ export interface HouseholdSettings {
   is_dairy_free: boolean;
   default_servings: ServingsSize;
   dietary_flags: DietaryFlag[];
+  macro_goals?: MacroGoals | null;
   /** What the household was paying HelloFresh per serving (for the savings estimate) */
   hellofresh_price_per_serving: number;
   /** Preferred grocery aisle walking order for this household's store */

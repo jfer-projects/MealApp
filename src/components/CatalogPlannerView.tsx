@@ -7,12 +7,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Dumbbell,
   Flame,
   Heart,
   Plus,
   Refrigerator,
   Search,
   Sparkles,
+  Target,
   ThumbsDown,
   ThumbsUp,
   Trash2,
@@ -34,6 +36,7 @@ import {
 import { findBlendDefinition } from '../utils/blendDecoder';
 import { formatAmount, transformIngredient } from '../utils/dairyEngine';
 import { formatWeekRange } from '../utils/dateUtils';
+import { estimateRecipeNutrition } from '../utils/nutritionCostEngine';
 import {
   COMMON_FRIDGE_STAPLES,
   evaluateRecipeMatch,
@@ -57,6 +60,7 @@ interface CatalogPlannerViewProps {
   onMovePlanDay?: (planId: string, newDay: DayOfWeek) => void;
   onRemoveFromPlan: (planId: string) => void;
   onFillMyWeek?: () => void;
+  onOpenMacroPlanner?: () => void;
   onCompleteWeeklyPlan: () => void;
   ratingsMap?: Record<string, RecipeRating>;
   onToggleFavorite?: (recipeId: string) => void;
@@ -69,6 +73,8 @@ const FILTER_TAGS = [
   'All',
   '❤️ Favorites',
   'Best Ingredient Match',
+  '🥩 High Protein (>35g)',
+  '🔥 Under 600 Cal',
   'Kid-Friendly',
   'Under 30 Mins',
   'Sheet Pan',
@@ -93,6 +99,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
   onMovePlanDay,
   onRemoveFromPlan,
   onFillMyWeek,
+  onOpenMacroPlanner,
   onCompleteWeeklyPlan,
   ratingsMap = {},
   onToggleFavorite,
@@ -153,6 +160,14 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
         const ratingEntry = ratingsMap[r.original_id || r.id] || ratingsMap[r.id];
         if (activeTag === '❤️ Favorites') {
           return Boolean(ratingEntry?.is_favorite);
+        }
+        if (activeTag === '🥩 High Protein (>35g)') {
+          const nut = estimateRecipeNutrition(r);
+          return nut.proteinGrams >= 35;
+        }
+        if (activeTag === '🔥 Under 600 Cal') {
+          const nut = estimateRecipeNutrition(r);
+          return nut.calories <= 600;
         }
         if (
           activeTag !== 'All' &&
@@ -269,6 +284,18 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
               >
                 <Wand2 className="w-3.5 h-3.5" />
                 ✨ Fill My Week
+              </button>
+            )}
+
+            {/* Macro Goals & AI Assistant */}
+            {onOpenMacroPlanner && (
+              <button
+                onClick={onOpenMacroPlanner}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs shadow-xs transition cursor-pointer"
+                title="Set target protein/calories and generate meals using your house inventory"
+              >
+                <Target className="w-3.5 h-3.5" />
+                🎯 Macro AI
               </button>
             )}
 
@@ -852,6 +879,26 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
                       {recipe.subtitle}
                     </p>
+
+                    {/* Estimated Nutrition & Macros */}
+                    {(() => {
+                      const nut = estimateRecipeNutrition(recipe);
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-orange-50 border border-orange-100 text-orange-900 text-[10px] font-extrabold">
+                            <Flame className="w-2.5 h-2.5 text-orange-500" />
+                            {nut.calories} kcal
+                          </span>
+                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-red-50 border border-red-100 text-red-900 text-[10px] font-extrabold">
+                            <Dumbbell className="w-2.5 h-2.5 text-red-500" />
+                            {nut.proteinGrams}g Protein
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-500">
+                            {nut.carbsGrams}g C • {nut.fatGrams}g F
+                          </span>
+                        </div>
+                      );
+                    })()}
 
                     {/* Scaled Ingredients Preview */}
                     <div className="mt-3 pt-3 border-t border-slate-100">

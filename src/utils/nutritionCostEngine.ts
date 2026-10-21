@@ -1,4 +1,4 @@
-import { Recipe, WeeklyPlanItem, ServingsSize } from '../types/freshdiy';
+import { MacroGoals, MacroMealSuggestion, Recipe, ServingsSize, WeeklyPlanItem } from '../types/freshdiy';
 
 export interface NutritionEstimate {
   calories: number;
@@ -119,4 +119,80 @@ export function computeWeeklySavings(
     weeklySavings: savings,
     annualSavings: annual,
   };
+}
+
+/**
+ * Rule-based fallback that matches catalog recipes to target macros
+ * and scores them based on on-hand pantry/fridge ingredients.
+ */
+export function suggestMacroMealsFallback(params: {
+  macroGoals: MacroGoals;
+  onHandItems: {
+    freezer: string[];
+    fridge: string[];
+    pantry: string[];
+  };
+  recipes: Recipe[];
+  isDairyFree: boolean;
+}): MacroMealSuggestion[] {
+  const { macroGoals, onHandItems, recipes } = params;
+
+  const onHandLower = new Set(
+    [...onHandItems.freezer, ...onHandItems.fridge, ...onHandItems.pantry].map((s) =>
+      s.toLowerCase().trim()
+    )
+  );
+
+  const scored = recipes
+    .filter((r) => r.is_latest)
+    .map((recipe) => {
+      const nut = estimateRecipeNutrition(recipe);
+
+      // Distance score from target macros
+      const calDiff = Math.abs(nut.calories - macroGoals.calories);
+      const proteinDiff = Math.max(0, macroGoals.proteinGrams - nut.proteinGrams) * 4;
+      const carbDiff = Math.abs(nut.carbsGrams - macroGoals.carbsGrams) * 2;
+      const fatDiff = Math.abs(nut.fatGrams - macroGoals.fatGrams) * 2;
+      const totalDiff = calDiff + proteinDiff + carbDiff + fatDiff;
+
+      // Pantry match score
+      const ingredients = recipe.ingredients_json || [];
+      const fromHome: string[] = [];
+      const toBuy: string[] = [];
+
+      for (const ing of ingredients) {
+        const ingLower = ing.name.toLowerCase().trim();
+        const hasIt = Array.from(onHandLower).some(
+          (h) => h.includes(ingLower) || ingLower.includes(h)
+        );
+        if (hasIt) {
+          fromHome.push(ing.name);
+        } else {
+          toBuy.push(ing.name);
+        }
+      }
+
+      const matchScore = Math.max(75, Math.min(98, Math.round(100 - totalDiff / 15)));
+
+      return {
+        id: `offline-${recipe.id}`,
+        title: recipe.title,
+        subtitle: recipe.subtitle || 'Catalog Recipe Aligned with Macros',
+        matchedRecipeId: recipe.id,
+        prepTimeMinutes: recipe.prep_time || 30,
+        nutrition: nut,
+        macroMatchScore: matchScore,
+        macroHighlights: [
+          `${nut.proteinGrams}g Protein`,
+          `${nut.calories} kcal`,
+          fromHome.length > 0 ? `${fromHome.length} ingredients at home` : 'Quick Prep',
+        ],
+        ingredientsFromHome: fromHome,
+        ingredientsToBuy: toBuy,
+        cookingSummary: `Prepared in ${recipe.prep_time} minutes with ${fromHome.length} ingredients from your kitchen.`,
+      };
+    })
+    .sort((a, b) => b.macroMatchScore - a.macroMatchScore);
+
+  return scored.slice(0, 3);
 }
