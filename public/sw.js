@@ -1,10 +1,9 @@
-const CACHE_NAME = 'freshdiy-cache-v1';
+const CACHE_NAME = 'freshdiy-cache-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icon.svg',
-  '/data/hellofresh_recipes.json'
+  '/icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
@@ -29,11 +28,31 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
 
-  // For app assets and recipes json, try network first, then fall back to cache
+  // Stale-while-revalidate for the static recipe catalog JSON so mobile loads instantly after first visit
+  if (url.pathname.endsWith('/data/hellofresh_recipes.json')) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) =>
+        cache.match(event.request).then((cachedResponse) => {
+          const fetchPromise = fetch(event.request)
+            .then((networkResponse) => {
+              if (networkResponse && networkResponse.status === 200) {
+                cache.put(event.request, networkResponse.clone());
+              }
+              return networkResponse;
+            })
+            .catch(() => cachedResponse);
+          return cachedResponse || fetchPromise;
+        })
+      )
+    );
+    return;
+  }
+
+  // Network-first with cache fallback for app shell & assets
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
+        if (networkResponse && networkResponse.status === 200 && url.origin === self.location.origin) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);

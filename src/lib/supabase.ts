@@ -69,31 +69,46 @@ export async function syncAllToSupabase(payload: {
   }
 
   try {
-    // 1. Upsert recipes in batches of 25
-    for (let i = 0; i < payload.recipes.length; i += 25) {
-      const batch = payload.recipes.slice(i, i + 25);
-      const { error } = await supabase
-        .from('recipes')
-        .upsert(batch, { onConflict: 'id' });
-      if (error) throw error;
+    // 1. Upsert only custom forked recipes (v2+) to keep sync fast
+    const customForks = payload.recipes.filter((r) => r.version > 1);
+    for (let i = 0; i < customForks.length; i += 25) {
+      const batch = customForks.slice(i, i + 25);
+      await supabase.from('recipes').upsert(batch, { onConflict: 'id' });
     }
 
-    // 2. Upsert cabinet items
+    // 2. Upsert cabinet items (including multi-location quantities if migration is applied)
     if (payload.cabinet.length > 0) {
       const cabRows = payload.cabinet.map((c) => ({
         item_name: c.item_name,
         category: c.category,
         status: c.status,
         usage_count: c.usage_count,
+        freezer_qty: c.freezer_qty ?? 0,
+        fridge_qty: c.fridge_qty ?? 0,
+        pantry_qty: c.pantry_qty ?? 0,
+        unit: c.unit || 'item',
         ...(payload.householdId ? { household_id: payload.householdId } : {}),
         ...(payload.userId ? { user_id: payload.userId } : {}),
       }));
-      await supabase.from('cabinet').upsert(cabRows, { onConflict: 'item_name' });
+      const { error: cabErr } = await supabase
+        .from('cabinet')
+        .upsert(cabRows, { onConflict: 'household_id,item_name' });
+      if (cabErr) {
+        // Fallback if migration_sync_repair.sql hasn't been run yet
+        const legacyRows = payload.cabinet.map((c) => ({
+          item_name: c.item_name,
+          category: c.category,
+          status: c.status,
+          usage_count: c.usage_count,
+          ...(payload.householdId ? { household_id: payload.householdId } : {}),
+        }));
+        await supabase.from('cabinet').upsert(legacyRows, { onConflict: 'item_name' });
+      }
     }
 
     return {
       ok: true,
-      message: `Synced ${payload.recipes.length} recipes and ${payload.cabinet.length} cabinet items to Supabase!`,
+      message: `Synced ${payload.cabinet.length} inventory items & ${payload.weeklyPlan.length} planned meals to Cloud!`,
     };
   } catch (err) {
     return {
@@ -104,7 +119,7 @@ export async function syncAllToSupabase(payload: {
 }
 
 /**
- * Subscribes to Supabase Realtime changes across weekly_plan, cabinet, and grocery_extras.
+ * Subscribes to Supabase Realtime changes across weekly_plan, cabinet, grocery_extras, grocery_checks, household_settings, and recipe_ratings.
  * Calls onPayload whenever another device inserts/updates/deletes a row.
  */
 export function subscribeToFamilyRealtime(onPayload: (table: string, payload: any) => void) {
@@ -134,6 +149,11 @@ export function subscribeToFamilyRealtime(onPayload: (table: string, payload: an
       'postgres_changes',
       { event: '*', schema: 'public', table: 'household_settings' },
       (payload) => onPayload('household_settings', payload)
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'recipe_ratings' },
+      (payload) => onPayload('recipe_ratings', payload)
     )
     .subscribe();
 

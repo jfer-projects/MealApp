@@ -95,6 +95,14 @@ export interface CabinetItem {
   category: InventoryCategory;
   status: StockStatus;
   usage_count: number;
+  /** Number of packages/units stored in the Deep Freezer on this unified card */
+  freezer_qty?: number;
+  /** Number of packages/units stored in the Refrigerator (including thawed items) */
+  fridge_qty?: number;
+  /** Number of packages/units stored in the Pantry/Cabinet */
+  pantry_qty?: number;
+  /** Unit label (e.g. 'pkg', 'lb', 'bottle', 'jar', 'item') */
+  unit?: string;
   updated_at?: string;
 }
 

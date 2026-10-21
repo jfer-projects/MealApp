@@ -106,9 +106,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       if (res.user && res.session) {
         onAuthenticated(res.user);
       } else {
-        setSuccessMessage(
-          '🎉 Account created! If your Supabase requires email confirmation, check your inbox. Otherwise you can sign in right now.'
-        );
+        setSuccessMessage(res.message || 'Account created! Check your email to confirm, then sign in.');
         setTab('signin');
       }
     } else {

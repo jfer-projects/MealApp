@@ -5,10 +5,7 @@ import {
   ChefHat,
   Database,
   Home,
-  KeyRound,
   Leaf,
-  Lock,
-  LogOut,
   Package,
   RefreshCw,
   ShoppingCart,
@@ -23,7 +20,7 @@ import { CookingView } from './components/CookingView';
 import { FamilySettingsModal } from './components/FamilySettingsModal';
 import { GroceryView } from './components/GroceryView';
 import { PhotoScannerModal } from './components/PhotoScannerModal';
-import { fetchUserProfile, signOut } from './lib/authService';
+import { fetchUserProfile } from './lib/authService';
 import {
   checkSupabaseTablesReady,
   subscribeToFamilyRealtime,
@@ -36,19 +33,25 @@ import {
   DayOfWeek,
   DAYS_OF_WEEK,
   GroceryExtra,
-  Household,
   Recipe,
   RecipeFeedback,
+  RecipeRating,
   ServingsSize,
   StockStatus,
   UserProfile,
   WeeklyPlanItem,
 } from './types/freshdiy';
 import { forkRecipeFromFeedback } from './utils/aiVersioningEngine';
-import { forkRecipeWithGemini } from './utils/geminiClient';
 import { DEFAULT_CABINET_ITEMS } from './utils/blendDecoder';
 import { getAdjacentWeek, getMondayOfWeek } from './utils/dateUtils';
-import { deductCabinetForCompletedMeals } from './utils/groceryEngine';
+import { forkRecipeWithGemini } from './utils/geminiClient';
+import {
+  deductCabinetForCompletedMeals,
+  deriveStockStatusFromQuantities,
+  getItemQuantities,
+  mergeDuplicateCabinetItems,
+} from './utils/groceryEngine';
+import { rankRecipesByOnHandIngredients } from './utils/pantryMatcher';
 
 type ActiveTab = 'catalog' | 'cabinet' | 'grocery' | 'cooking';
 
@@ -58,6 +61,7 @@ const STORAGE_KEYS = {
   plan: 'freshdiy_weekly_plan_v2',
   feedback: 'freshdiy_feedback_v1',
   extras: 'freshdiy_extras_v1',
+  ratings: 'freshdiy_ratings_v1',
   isDairyFree: 'freshdiy_is_dairy_free_v1',
   defaultServings: 'freshdiy_default_servings_v1',
   valleriaPhone: 'freshdiy_valleria_phone_v1',
@@ -67,6 +71,17 @@ const STORAGE_KEYS = {
   checkedGroceryKeys: 'freshdiy_checked_grocery_keys_v1',
   fridgeItems: 'freshdiy_fridge_items_v1',
 };
+
+function generateUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog');
@@ -118,7 +133,8 @@ export const App: React.FC = () => {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [cabinet, setCabinet] = useState<CabinetItem[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.cabinet);
-    return saved ? JSON.parse(saved) : DEFAULT_CABINET_ITEMS;
+    const parsed: CabinetItem[] = saved ? JSON.parse(saved) : DEFAULT_CABINET_ITEMS;
+    return mergeDuplicateCabinetItems(parsed);
   });
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanItem[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.plan);
@@ -128,24 +144,30 @@ export const App: React.FC = () => {
     const saved = localStorage.getItem(STORAGE_KEYS.feedback);
     return saved ? JSON.parse(saved) : [];
   });
+  const [ratingsMap, setRatingsMap] = useState<Record<string, RecipeRating>>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.ratings);
+    return saved ? JSON.parse(saved) : {};
+  });
   const [extras, setExtras] = useState<GroceryExtra[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.extras);
     return saved
       ? JSON.parse(saved)
       : [
           {
-            id: 'extra-1',
+            id: generateUuid(),
             week_start_date: getMondayOfWeek(),
             item_name: 'Kids Organic Apple Sauce Pouches',
             aisle: 'Household & Extras',
             checked: false,
+            is_recurring: true,
           },
           {
-            id: 'extra-2',
+            id: generateUuid(),
             week_start_date: getMondayOfWeek(),
             item_name: 'Barista Oat Milk (for Coffee)',
             aisle: 'Dairy Alternatives',
             checked: false,
+            is_recurring: true,
           },
         ];
   });
@@ -193,7 +215,6 @@ export const App: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
 
-    // Safety timeout: Never leave the user stuck on loading screen if network stalls
     const safetyTimer = setTimeout(() => {
       if (isMounted) setAuthChecking(false);
     }, 4000);
@@ -252,13 +273,15 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Sync Household Settings from Supabase
+  // Sync Household Settings & Ratings from Supabase
   useEffect(() => {
     if (!currentUser?.household?.id || !supaStatus.tablesReady) return;
+    const hId = currentUser.household.id;
+
     supabase
       .from('household_settings')
       .select('*')
-      .eq('household_id', currentUser.household.id)
+      .eq('household_id', hId)
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
@@ -270,6 +293,20 @@ export const App: React.FC = () => {
             setHellofreshPrice(Number(data.hellofresh_price_per_serving));
             localStorage.setItem('freshdiy_hf_price_v1', String(data.hellofresh_price_per_serving));
           }
+        }
+      });
+
+    supabase
+      .from('recipe_ratings')
+      .select('*')
+      .eq('household_id', hId)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const nextMap: Record<string, RecipeRating> = {};
+          for (const row of data) {
+            nextMap[row.recipe_id] = row as RecipeRating;
+          }
+          setRatingsMap((prev) => ({ ...prev, ...nextMap }));
         }
       });
   }, [currentUser?.household?.id, supaStatus.tablesReady]);
@@ -301,7 +338,6 @@ export const App: React.FC = () => {
       setSupaStatus(status);
 
       try {
-        // Always load the full HelloFresh catalog JSON (supports 1,500+ recipes without 1,000-row PostgREST cap)
         const res = await fetch('/data/hellofresh_recipes.json');
         const baseCatalog: Recipe[] = await res.json();
 
@@ -349,7 +385,7 @@ export const App: React.FC = () => {
           ]);
 
           if (remoteCabinet && remoteCabinet.length > 0) {
-            setCabinet(remoteCabinet as CabinetItem[]);
+            setCabinet(mergeDuplicateCabinetItems(remoteCabinet as CabinetItem[]));
           }
           if (remotePlan && remotePlan.length > 0) {
             setWeeklyPlan(remotePlan as WeeklyPlanItem[]);
@@ -384,7 +420,7 @@ export const App: React.FC = () => {
         if (!existingPlan && mergedCatalog.length >= 3) {
           const starterPlan: WeeklyPlanItem[] = [
             {
-              id: 'plan-mon',
+              id: generateUuid(),
               week_start_date: currentMonday,
               recipe_id: mergedCatalog[0].id,
               day_of_week: 'Monday',
@@ -392,7 +428,7 @@ export const App: React.FC = () => {
               status: 'planned',
             },
             {
-              id: 'plan-wed',
+              id: generateUuid(),
               week_start_date: currentMonday,
               recipe_id: mergedCatalog[1].id,
               day_of_week: 'Wednesday',
@@ -400,7 +436,7 @@ export const App: React.FC = () => {
               status: 'planned',
             },
             {
-              id: 'plan-fri',
+              id: generateUuid(),
               week_start_date: currentMonday,
               recipe_id: mergedCatalog[2].id,
               day_of_week: 'Friday',
@@ -418,7 +454,7 @@ export const App: React.FC = () => {
     loadInitialData();
   }, [currentUser?.id, currentUser?.household?.id]);
 
-  // Multi-device Realtime Sync for Valleria & Family (no paid SMS)
+  // Multi-device Realtime Sync for Household Members (no paid SMS)
   useEffect(() => {
     if (!supaStatus.tablesReady) return;
 
@@ -434,7 +470,7 @@ export const App: React.FC = () => {
           let query = supabase.from('cabinet').select('*').order('item_name', { ascending: true });
           if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id},household_id.is.null`);
           const { data } = await query;
-          if (data) setCabinet(data as CabinetItem[]);
+          if (data) setCabinet(mergeDuplicateCabinetItems(data as CabinetItem[]));
         } else if (table === 'grocery_extras') {
           let query = supabase.from('grocery_extras').select('*').order('created_at', { ascending: true });
           if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id},household_id.is.null`);
@@ -469,6 +505,20 @@ export const App: React.FC = () => {
               if (data.hellofresh_price_per_serving) setHellofreshPrice(Number(data.hellofresh_price_per_serving));
             }
           }
+        } else if (table === 'recipe_ratings') {
+          if (hId) {
+            const { data } = await supabase
+              .from('recipe_ratings')
+              .select('*')
+              .eq('household_id', hId);
+            if (data) {
+              const nextMap: Record<string, RecipeRating> = {};
+              for (const row of data) {
+                nextMap[row.recipe_id] = row as RecipeRating;
+              }
+              setRatingsMap((prev) => ({ ...prev, ...nextMap }));
+            }
+          }
         }
       } catch (err) {
         console.error('Realtime update refresh error:', err);
@@ -478,7 +528,7 @@ export const App: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, [supaStatus.tablesReady, currentUser?.id, currentUser?.household?.id]);
+  }, [supaStatus.tablesReady, currentUser?.id, currentUser?.household?.id, activeWeekStartDate]);
 
   useEffect(() => {
     const forksOnly = recipes.filter((r) => r.version > 1);
@@ -507,6 +557,10 @@ export const App: React.FC = () => {
   }, [extras]);
 
   useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.ratings, JSON.stringify(ratingsMap));
+  }, [ratingsMap]);
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.isDairyFree, String(isDairyFree));
   }, [isDairyFree]);
 
@@ -533,6 +587,42 @@ export const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.checkedGroceryKeys, JSON.stringify(checkedGroceryKeys));
   }, [checkedGroceryKeys]);
+
+  // Helper to persist a CabinetItem to Supabase with graceful fallback if new columns aren't migrated yet
+  const persistCabinetItemToSupabase = async (item: CabinetItem) => {
+    if (!supaStatus.tablesReady) return;
+    const fullPayload: any = {
+      item_name: item.item_name,
+      category: item.category,
+      status: item.status,
+      usage_count: item.usage_count || 0,
+      freezer_qty: item.freezer_qty ?? 0,
+      fridge_qty: item.fridge_qty ?? 0,
+      pantry_qty: item.pantry_qty ?? 0,
+      unit: item.unit || 'item',
+    };
+    if (currentUser?.household?.id) fullPayload.household_id = currentUser.household.id;
+    if (currentUser?.id) fullPayload.user_id = currentUser.id;
+
+    try {
+      const { error } = await supabase
+        .from('cabinet')
+        .upsert(fullPayload, { onConflict: 'household_id,item_name' });
+      if (error) {
+        // Fallback if migration_sync_repair.sql hasn't been executed yet
+        const legacyPayload: any = {
+          item_name: item.item_name,
+          category: item.category,
+          status: item.status,
+          usage_count: item.usage_count || 0,
+        };
+        if (currentUser?.household?.id) legacyPayload.household_id = currentUser.household.id;
+        await supabase.from('cabinet').upsert(legacyPayload, { onConflict: 'item_name' });
+      }
+    } catch (err) {
+      console.warn('Persist cabinet item error:', err);
+    }
+  };
 
   // Handlers
   const handleNavigateWeek = (offset: number) => {
@@ -568,7 +658,7 @@ export const App: React.FC = () => {
     servings: ServingsSize
   ) => {
     const newItem: WeeklyPlanItem = {
-      id: `plan-${day.toLowerCase()}-${Date.now()}`,
+      id: generateUuid(),
       week_start_date: activeWeekStartDate,
       recipe_id: recipeId,
       day_of_week: day,
@@ -585,6 +675,7 @@ export const App: React.FC = () => {
 
     if (supaStatus.tablesReady) {
       const payload: any = {
+        id: newItem.id,
         week_start_date: activeWeekStartDate,
         recipe_id: recipeId,
         day_of_week: day,
@@ -604,6 +695,79 @@ export const App: React.FC = () => {
         console.warn('Upsert plan error:', err);
       }
     }
+  };
+
+  const handleMovePlanDay = async (planId: string, newDay: DayOfWeek) => {
+    const targetPlan = weeklyPlan.find((p) => p.id === planId);
+    if (!targetPlan || targetPlan.day_of_week === newDay) return;
+
+    setWeeklyPlan((prev) => {
+      const existingOnTargetDay = prev.find(
+        (p) =>
+          p.id !== planId &&
+          p.day_of_week === newDay &&
+          (p.week_start_date || getMondayOfWeek()) === activeWeekStartDate
+      );
+      return prev.map((p) => {
+        if (p.id === planId) {
+          return { ...p, day_of_week: newDay };
+        }
+        if (existingOnTargetDay && p.id === existingOnTargetDay.id) {
+          return { ...p, day_of_week: targetPlan.day_of_week };
+        }
+        return p;
+      });
+    });
+
+    if (supaStatus.tablesReady) {
+      await supabase
+        .from('weekly_plan')
+        .update({ day_of_week: newDay })
+        .eq('id', planId);
+    }
+    showToast(`📅 Moved dinner to ${newDay}!`);
+  };
+
+  const handleFillMyWeek = async () => {
+    const currentWeekMeals = weeklyPlan.filter(
+      (p) => (p.week_start_date || getMondayOfWeek()) === activeWeekStartDate
+    );
+    const usedDays = new Set(currentWeekMeals.map((p) => p.day_of_week));
+    const usedRecipeIds = new Set(currentWeekMeals.map((p) => p.recipe_id));
+
+    const preferredDays: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const openDays = preferredDays.filter((d) => !usedDays.has(d)).slice(0, Math.max(0, 4 - currentWeekMeals.length) || 3);
+
+    if (openDays.length === 0) {
+      showToast('Your week is already full!');
+      return;
+    }
+
+    const ranked = rankRecipesByOnHandIngredients(
+      recipes,
+      onHandFridgeItems,
+      cabinet,
+      defaultServings,
+      isDairyFree
+    ).filter((r) => {
+      if (usedRecipeIds.has(r.recipe.id)) return false;
+      const ratingEntry = ratingsMap[r.recipe.original_id || r.recipe.id] || ratingsMap[r.recipe.id];
+      return ratingEntry?.rating !== -1;
+    });
+
+    const chosen: Recipe[] = [];
+    for (const candidate of ranked) {
+      if (chosen.length >= openDays.length) break;
+      chosen.push(candidate.recipe);
+    }
+
+    for (let i = 0; i < chosen.length; i++) {
+      await handleAddToPlan(chosen[i].id, openDays[i], defaultServings);
+    }
+
+    showToast(
+      `✨ Added ${chosen.length} high-match dinners to your week (${openDays.slice(0, chosen.length).map((d) => d.slice(0, 3)).join(', ')})!`
+    );
   };
 
   const handleUpdatePlanServings = async (planId: string, servings: ServingsSize) => {
@@ -637,26 +801,27 @@ export const App: React.FC = () => {
 
     setCabinet(updatedCabinet);
     setWeeklyPlan((prev) =>
-      prev.map((p) => ({
-        ...p,
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      }))
+      prev.map((p) =>
+        (p.week_start_date || getMondayOfWeek()) === activeWeekStartDate
+          ? {
+              ...p,
+              status: 'completed',
+              completed_at: new Date().toISOString(),
+            }
+          : p
+      )
     );
 
     if (supaStatus.tablesReady) {
       for (const cab of updatedCabinet) {
-        await supabase
-          .from('cabinet')
-          .update({ status: cab.status, usage_count: cab.usage_count })
-          .eq('item_name', cab.item_name);
+        await persistCabinetItemToSupabase(cab);
       }
     }
 
     if (deductedNames.length > 0) {
       showToast(
-        `🎉 Weekly Plan Completed! Auto-deducted ${deductedNames.length} cabinet items: ${deductedNames.slice(0, 4).join(', ')}${
-          deductedNames.length > 4 ? '...' : ''
+        `🎉 Weekly Plan Completed! Auto-deducted ${deductedNames.length} inventory items: ${deductedNames.slice(0, 3).join(', ')}${
+          deductedNames.length > 3 ? '...' : ''
         }`
       );
     } else {
@@ -666,76 +831,192 @@ export const App: React.FC = () => {
 
   const handleUpdateCabinetStatus = async (id: string, status: StockStatus) => {
     const target = cabinet.find((c) => c.id === id);
-    setCabinet((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              status,
-              usage_count: status === 'in_stock' ? 0 : c.usage_count,
-            }
-          : c
-      )
-    );
-    if (supaStatus.tablesReady && target) {
-      await supabase
-        .from('cabinet')
-        .update({
-          status,
-          usage_count: status === 'in_stock' ? 0 : target.usage_count,
-        })
-        .eq('item_name', target.item_name);
+    if (!target) return;
+    const qty = getItemQuantities(target);
+    let nextFreezer = qty.freezer;
+    let nextFridge = qty.fridge;
+    let nextPantry = qty.pantry;
+
+    if (status === 'out_of_stock') {
+      nextFreezer = 0;
+      nextFridge = 0;
+      nextPantry = 0;
+    } else if (status === 'in_stock' && qty.total === 0) {
+      if (target.category === 'Freezer & Deep Freeze') nextFreezer = 1;
+      else if (target.category === 'Refrigerator') nextFridge = 1;
+      else nextPantry = 1;
     }
+
+    const updatedItem: CabinetItem = {
+      ...target,
+      status,
+      freezer_qty: nextFreezer,
+      fridge_qty: nextFridge,
+      pantry_qty: nextPantry,
+      usage_count: status === 'in_stock' ? 0 : target.usage_count,
+      updated_at: new Date().toISOString(),
+    };
+
+    setCabinet((prev) => prev.map((c) => (c.id === id ? updatedItem : c)));
+    await persistCabinetItemToSupabase(updatedItem);
+  };
+
+  const handleUpdateCabinetItem = async (updatedItem: CabinetItem) => {
+    setCabinet((prev) => prev.map((c) => (c.id === updatedItem.id ? updatedItem : c)));
+    await persistCabinetItemToSupabase(updatedItem);
+  };
+
+  // 1-Tap "Move 1 to Fridge (Thaw)" on the unified inventory card
+  const handleThawToFridge = async (id: string) => {
+    const target = cabinet.find((c) => c.id === id);
+    if (!target) return;
+
+    const current = getItemQuantities(target);
+    if (current.freezer <= 0) {
+      showToast(`No ${target.item_name} packages left in Deep Freezer to thaw.`);
+      return;
+    }
+
+    const nextFreezer = current.freezer - 1;
+    const nextFridge = current.fridge + 1;
+    const nextPantry = current.pantry;
+    const nextStatus = deriveStockStatusFromQuantities(
+      nextFreezer,
+      nextFridge,
+      nextPantry,
+      target.status
+    );
+
+    const updatedItem: CabinetItem = {
+      ...target,
+      freezer_qty: nextFreezer,
+      fridge_qty: nextFridge,
+      pantry_qty: nextPantry,
+      unit: current.unit,
+      status: nextStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    setCabinet((prev) => prev.map((c) => (c.id === id ? updatedItem : c)));
+    await persistCabinetItemToSupabase(updatedItem);
+
+    showToast(
+      `❄️➔🥛 Moved 1 ${current.unit} of "${target.item_name}" to Refrigerator! (${nextFreezer} in Freezer, ${nextFridge} in Fridge)`
+    );
   };
 
   const handleAddCabinetItem = async (
     name: string,
     category: CabinetItem['category'],
-    status: StockStatus
+    status: StockStatus,
+    quantities?: {
+      freezer_qty?: number;
+      fridge_qty?: number;
+      pantry_qty?: number;
+      unit?: string;
+    }
   ) => {
-    const newItem: CabinetItem = {
-      id: `cab-${Date.now()}-${Math.random()}`,
-      item_name: name,
-      category,
-      status,
-      usage_count: 0,
-    };
+    const cleanName = name.trim();
+    if (!cleanName) return;
+
+    const addFreezer =
+      quantities?.freezer_qty !== undefined
+        ? quantities.freezer_qty
+        : category === 'Freezer & Deep Freeze' && status !== 'out_of_stock'
+        ? 1
+        : 0;
+    const addFridge =
+      quantities?.fridge_qty !== undefined
+        ? quantities.fridge_qty
+        : category === 'Refrigerator' && status !== 'out_of_stock'
+        ? 1
+        : 0;
+    const addPantry =
+      quantities?.pantry_qty !== undefined
+        ? quantities.pantry_qty
+        : category !== 'Freezer & Deep Freeze' &&
+          category !== 'Refrigerator' &&
+          status !== 'out_of_stock'
+        ? 1
+        : 0;
+    const unit =
+      quantities?.unit ||
+      (category === 'Freezer & Deep Freeze' ? 'pkg' : 'item');
+
+    let finalItemToPersist: CabinetItem | null = null;
+
     setCabinet((prev) => {
       const existingIdx = prev.findIndex(
-        (c) => c.item_name.toLowerCase() === name.toLowerCase()
+        (c) => c.item_name.trim().toLowerCase() === cleanName.toLowerCase()
       );
       if (existingIdx !== -1) {
-        return prev.map((c, i) =>
-          i === existingIdx ? { ...c, status: 'in_stock', usage_count: 0 } : c
+        const existing = prev[existingIdx];
+        const curQty = getItemQuantities(existing);
+        const mergedFreezer = curQty.freezer + addFreezer;
+        const mergedFridge = curQty.fridge + addFridge;
+        const mergedPantry = curQty.pantry + addPantry;
+        const mergedStatus = deriveStockStatusFromQuantities(
+          mergedFreezer,
+          mergedFridge,
+          mergedPantry,
+          'in_stock'
         );
+
+        const mergedItem: CabinetItem = {
+          ...existing,
+          freezer_qty: mergedFreezer,
+          fridge_qty: mergedFridge,
+          pantry_qty: mergedPantry,
+          unit: quantities?.unit || existing.unit || curQty.unit,
+          status: mergedStatus,
+          usage_count: 0,
+          updated_at: new Date().toISOString(),
+        };
+        finalItemToPersist = mergedItem;
+        return prev.map((c, i) => (i === existingIdx ? mergedItem : c));
       }
-      return [newItem, ...prev];
-    });
-    if (supaStatus.tablesReady) {
-      const payload: any = {
-        item_name: name,
+
+      const newItem: CabinetItem = {
+        id: generateUuid(),
+        item_name: cleanName,
         category,
         status,
         usage_count: 0,
+        freezer_qty: addFreezer,
+        fridge_qty: addFridge,
+        pantry_qty: addPantry,
+        unit,
+        updated_at: new Date().toISOString(),
       };
-      if (currentUser?.household?.id) payload.household_id = currentUser.household.id;
-      if (currentUser?.id) payload.user_id = currentUser.id;
+      finalItemToPersist = newItem;
+      return [newItem, ...prev];
+    });
 
-      try {
-        const { error } = await supabase.from('cabinet').upsert(payload, { onConflict: 'item_name' });
-        if (error && error.message.includes('household_id')) {
-          delete payload.household_id;
-          await supabase.from('cabinet').upsert(payload, { onConflict: 'item_name' });
-        }
-      } catch (err) {
-        console.warn('Upsert cabinet error:', err);
-      }
+    if (finalItemToPersist) {
+      await persistCabinetItemToSupabase(finalItemToPersist);
     }
   };
 
   const handleRestockAllLowAndOut = async () => {
     setCabinet((prev) =>
-      prev.map((c) => ({ ...c, status: 'in_stock', usage_count: 0 }))
+      prev.map((c) => {
+        const q = getItemQuantities(c);
+        if (q.total === 0) {
+          return {
+            ...c,
+            status: 'in_stock',
+            usage_count: 0,
+            freezer_qty: c.category === 'Freezer & Deep Freeze' ? 1 : 0,
+            fridge_qty: c.category === 'Refrigerator' ? 1 : 0,
+            pantry_qty:
+              c.category !== 'Freezer & Deep Freeze' &&
+              c.category !== 'Refrigerator'
+                ? 1
+                : 0,
+          };
+        }
+        return { ...c, status: 'in_stock', usage_count: 0 };
+      })
     );
     if (supaStatus.tablesReady) {
       await supabase
@@ -749,9 +1030,10 @@ export const App: React.FC = () => {
   const handleDeleteCabinetItem = async (id: string) => {
     const itemToDelete = cabinet.find((c) => c.id === id);
     setCabinet((prev) => prev.filter((c) => c.id !== id));
-    if (supaStatus.tablesReady) {
+    if (supaStatus.tablesReady && itemToDelete) {
       try {
         await supabase.from('cabinet').delete().eq('id', id);
+        await supabase.from('cabinet').delete().eq('item_name', itemToDelete.item_name);
       } catch (err) {
         console.warn('Delete cabinet item error:', err);
       }
@@ -769,6 +1051,113 @@ export const App: React.FC = () => {
       }
     }
     showToast('Cleared inventory! You now have a clean slate for your kitchen.');
+  };
+
+  // Favorites & Ratings Handlers
+  const handleToggleFavorite = async (recipeKey: string) => {
+    const existing = ratingsMap[recipeKey];
+    const nextFav = !existing?.is_favorite;
+    const updated: RecipeRating = {
+      id: existing?.id || generateUuid(),
+      household_id: currentUser?.household?.id || 'local',
+      recipe_id: recipeKey,
+      rating: existing?.rating || 0,
+      is_favorite: nextFav,
+      times_cooked: existing?.times_cooked || 0,
+      last_cooked_at: existing?.last_cooked_at || null,
+    };
+
+    setRatingsMap((prev) => ({ ...prev, [recipeKey]: updated }));
+
+    if (supaStatus.tablesReady && currentUser?.household?.id) {
+      try {
+        await supabase.from('recipe_ratings').upsert(
+          {
+            household_id: currentUser.household.id,
+            recipe_id: recipeKey,
+            rating: updated.rating,
+            is_favorite: updated.is_favorite,
+            times_cooked: updated.times_cooked,
+            last_cooked_at: updated.last_cooked_at,
+          },
+          { onConflict: 'household_id,recipe_id' }
+        );
+      } catch (err) {
+        console.warn('Could not sync favorite:', err);
+      }
+    }
+
+    showToast(nextFav ? '❤️ Added to Family Favorites!' : 'Removed from Favorites');
+  };
+
+  const handleMarkRecipeCooked = async (recipe: Recipe, rating: -1 | 0 | 1 = 1) => {
+    const recipeKey = recipe.original_id || recipe.id;
+    const existing = ratingsMap[recipeKey];
+    const updatedRating: RecipeRating = {
+      id: existing?.id || generateUuid(),
+      household_id: currentUser?.household?.id || 'local',
+      recipe_id: recipeKey,
+      rating: rating !== 0 ? rating : existing?.rating || 0,
+      is_favorite: rating === 1 ? true : existing?.is_favorite || false,
+      times_cooked: (existing?.times_cooked || 0) + 1,
+      last_cooked_at: new Date().toISOString(),
+    };
+
+    setRatingsMap((prev) => ({ ...prev, [recipeKey]: updatedRating }));
+
+    // Deduct used ingredients from Fridge -> Deep Freezer -> Pantry
+    const syntheticPlanItem: WeeklyPlanItem = {
+      id: generateUuid(),
+      week_start_date: activeWeekStartDate,
+      recipe_id: recipe.id,
+      day_of_week: 'Monday',
+      servings: cookingServings,
+      status: 'completed',
+    };
+
+    const { updatedCabinet, deductedNames } = deductCabinetForCompletedMeals(
+      [syntheticPlanItem],
+      recipes,
+      cabinet
+    );
+    setCabinet(updatedCabinet);
+
+    // Mark matching planned meal in active week as completed
+    setWeeklyPlan((prev) =>
+      prev.map((p) =>
+        p.recipe_id === recipe.id &&
+        (p.week_start_date || getMondayOfWeek()) === activeWeekStartDate
+          ? { ...p, status: 'completed', completed_at: new Date().toISOString() }
+          : p
+      )
+    );
+
+    if (supaStatus.tablesReady) {
+      for (const cab of updatedCabinet) {
+        await persistCabinetItemToSupabase(cab);
+      }
+      if (currentUser?.household?.id) {
+        await supabase.from('recipe_ratings').upsert(
+          {
+            household_id: currentUser.household.id,
+            recipe_id: recipeKey,
+            rating: updatedRating.rating,
+            is_favorite: updatedRating.is_favorite,
+            times_cooked: updatedRating.times_cooked,
+            last_cooked_at: updatedRating.last_cooked_at,
+          },
+          { onConflict: 'household_id,recipe_id' }
+        );
+      }
+    }
+
+    if (deductedNames.length > 0) {
+      showToast(
+        `🍽️ Marked "${recipe.title}" cooked! Deducted: ${deductedNames.slice(0, 3).join(', ')}`
+      );
+    } else {
+      showToast(`🍽️ Marked "${recipe.title}" cooked!`);
+    }
   };
 
   const handleSubmitFeedbackAndFork = async (
@@ -794,7 +1183,7 @@ export const App: React.FC = () => {
     const { newRecipe, changeSummary } = forkedResult;
 
     const feedbackEntry: RecipeFeedback = {
-      id: `fb-${Date.now()}`,
+      id: generateUuid(),
       recipe_id: baseRecipe.id,
       author_name: authorName,
       notes,
@@ -826,6 +1215,7 @@ export const App: React.FC = () => {
     if (supaStatus.tablesReady) {
       await supabase.from('recipes').insert(newRecipe);
       await supabase.from('recipe_feedback').insert({
+        id: feedbackEntry.id,
         recipe_id: baseRecipe.id,
         author_name: authorName,
         notes,
@@ -885,6 +1275,26 @@ export const App: React.FC = () => {
     [cabinet]
   );
 
+  // Merge user's manual Fridge checklist items with any in-stock Freezer or Fridge items from Kitchen Inventory
+  const effectiveOnHandFridgeItems = useMemo(() => {
+    const freezerAndFridgeFromInventory = cabinet
+      .filter((c) => {
+        if (c.status === 'out_of_stock') return false;
+        const q = getItemQuantities(c);
+        return (
+          q.freezer > 0 ||
+          q.fridge > 0 ||
+          c.category === 'Freezer & Deep Freeze' ||
+          c.category === 'Refrigerator'
+        );
+      })
+      .map((c) => c.item_name);
+
+    return Array.from(
+      new Set([...onHandFridgeItems, ...freezerAndFridgeFromInventory])
+    );
+  }, [onHandFridgeItems, cabinet]);
+
   if (authChecking) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
@@ -935,7 +1345,7 @@ export const App: React.FC = () => {
                     setIsFamilyModalOpen(true);
                   }}
                   className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition cursor-pointer"
-                  title="Manage Family Kitchen & Invite Valleria or Friends"
+                  title="Manage Family Kitchen & Household Invite Code"
                 >
                   <Home className="w-3 h-3 text-emerald-600" />
                   <span>{currentUser.household?.name || 'Our Family Kitchen'}</span>
@@ -989,7 +1399,7 @@ export const App: React.FC = () => {
               }`}
             >
               <ShoppingCart className="w-4 h-4" />
-              Smart Grocery ({weeklyPlan.length})
+              Smart Grocery ({weeklyPlan.filter((p) => p.week_start_date === activeWeekStartDate).length})
             </button>
 
             <button
@@ -1015,7 +1425,7 @@ export const App: React.FC = () => {
                 })
               }
               className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
-              title="Take a photo of your spice cabinet or fridge to auto-import"
+              title="Take a photo of your spice cabinet, fridge, or deep freezer to auto-import"
             >
               <Camera className="w-3.5 h-3.5 text-emerald-400" />
               <span>Scan</span>
@@ -1090,7 +1500,7 @@ export const App: React.FC = () => {
             isDairyFree={isDairyFree}
             activeWeekStartDate={activeWeekStartDate}
             onNavigateWeek={handleNavigateWeek}
-            onHandFridgeItems={onHandFridgeItems}
+            onHandFridgeItems={effectiveOnHandFridgeItems}
             onToggleFridgeItem={(item) => {
               setOnHandFridgeItems((prev) => {
                 const exists = prev.some(
@@ -1119,8 +1529,12 @@ export const App: React.FC = () => {
             }}
             onAddToPlan={handleAddToPlan}
             onUpdatePlanServings={handleUpdatePlanServings}
+            onMovePlanDay={handleMovePlanDay}
             onRemoveFromPlan={handleRemoveFromPlan}
+            onFillMyWeek={handleFillMyWeek}
             onCompleteWeeklyPlan={handleCompleteWeeklyPlan}
+            ratingsMap={ratingsMap}
+            onToggleFavorite={handleToggleFavorite}
             onOpenCookingView={(recipe, serv) => {
               setCookingRecipeId(recipe.id);
               setCookingServings(serv);
@@ -1137,13 +1551,15 @@ export const App: React.FC = () => {
           <CabinetView
             cabinet={cabinet}
             onUpdateStatus={handleUpdateCabinetStatus}
+            onUpdateItem={handleUpdateCabinetItem}
+            onThawToFridge={handleThawToFridge}
             onDeleteItem={handleDeleteCabinetItem}
             onClearAllItems={handleClearAllCabinetItems}
             onAddCabinetItem={handleAddCabinetItem}
             onRestockAllLowAndOut={handleRestockAllLowAndOut}
             onAddExtraToGrocery={async (itemName, aisle) => {
               const newEx: GroceryExtra = {
-                id: `extra-${Date.now()}-${Math.random()}`,
+                id: generateUuid(),
                 week_start_date: activeWeekStartDate,
                 item_name: itemName,
                 aisle,
@@ -1152,6 +1568,7 @@ export const App: React.FC = () => {
               setExtras((prev) => [...prev, newEx]);
               if (supaStatus.tablesReady) {
                 const payload: any = {
+                  id: newEx.id,
                   week_start_date: activeWeekStartDate,
                   item_name: itemName,
                   aisle,
@@ -1189,25 +1606,32 @@ export const App: React.FC = () => {
             checkedGroceryKeys={checkedGroceryKeys}
             onToggleGroceryKey={handleToggleGroceryKey}
             hellofreshPrice={hellofreshPrice}
-            onAddExtra={async (itemName, aisle) => {
+            onAddExtra={async (itemName, aisle, isRecurring = false) => {
               const newEx: GroceryExtra = {
-                id: `extra-${Date.now()}`,
+                id: generateUuid(),
                 week_start_date: activeWeekStartDate,
                 item_name: itemName,
                 aisle,
                 checked: false,
+                is_recurring: isRecurring,
               };
               setExtras((prev) => [...prev, newEx]);
               if (supaStatus.tablesReady) {
                 const payload: any = {
+                  id: newEx.id,
                   week_start_date: activeWeekStartDate,
                   item_name: itemName,
                   aisle,
                   checked: false,
+                  is_recurring: isRecurring,
                 };
                 if (currentUser?.household?.id) payload.household_id = currentUser.household.id;
                 if (currentUser?.id) payload.user_id = currentUser.id;
-                await supabase.from('grocery_extras').insert(payload);
+                const { error } = await supabase.from('grocery_extras').insert(payload);
+                if (error) {
+                  delete payload.is_recurring;
+                  await supabase.from('grocery_extras').insert(payload);
+                }
               }
             }}
             onToggleExtra={async (id) => {
@@ -1226,11 +1650,46 @@ export const App: React.FC = () => {
                   .eq('id', id);
               }
             }}
+            onToggleExtraRecurring={async (id) => {
+              const target = extras.find((e) => e.id === id);
+              if (!target) return;
+              const nextRec = !target.is_recurring;
+              setExtras((prev) =>
+                prev.map((e) =>
+                  e.id === id ? { ...e, is_recurring: nextRec } : e
+                )
+              );
+              if (supaStatus.tablesReady) {
+                await supabase
+                  .from('grocery_extras')
+                  .update({ is_recurring: nextRec })
+                  .eq('id', id);
+              }
+              showToast(
+                nextRec
+                  ? `📌 Pinned "${target.item_name}" as a recurring weekly staple!`
+                  : `Unpinned "${target.item_name}" from weekly staples.`
+              );
+            }}
             onDeleteExtra={async (id) => {
               setExtras((prev) => prev.filter((e) => e.id !== id));
               if (supaStatus.tablesReady) {
                 await supabase.from('grocery_extras').delete().eq('id', id);
               }
+            }}
+            onMarkItemInInventory={async (itemName, aisle) => {
+              const cat: CabinetItem['category'] =
+                aisle === 'Meat & Seafood'
+                  ? 'Freezer & Deep Freeze'
+                  : aisle === 'Produce' ||
+                    aisle === 'Dairy Alternatives' ||
+                    aisle === 'Dairy & Eggs'
+                  ? 'Refrigerator'
+                  : 'Spices';
+              await handleAddCabinetItem(itemName, cat, 'in_stock');
+              showToast(
+                `✅ Marked "${itemName}" as In-Stock in your Kitchen Inventory (${cat})!`
+              );
             }}
             onAddToPlan={handleAddToPlan}
             onRemoveFromPlan={handleRemoveFromPlan}
@@ -1247,6 +1706,12 @@ export const App: React.FC = () => {
             isDairyFree={isDairyFree}
             geminiApiKey={geminiApiKey}
             feedbackHistory={activeRecipeFeedback}
+            recipeRating={
+              ratingsMap[activeCookingRecipe.original_id || activeCookingRecipe.id] ||
+              ratingsMap[activeCookingRecipe.id]
+            }
+            onToggleFavorite={handleToggleFavorite}
+            onMarkRecipeCooked={handleMarkRecipeCooked}
             onChangeServings={setCookingServings}
             onSelectVersion={(ver) => setCookingRecipeId(ver.id)}
             onSubmitFeedbackAndFork={handleSubmitFeedbackAndFork}
@@ -1325,9 +1790,9 @@ export const App: React.FC = () => {
         >
           <ShoppingCart className="w-5 h-5" />
           <span className="text-[10px] mt-0.5">Grocery</span>
-          {weeklyPlan.length > 0 && (
+          {weeklyPlan.filter((p) => p.week_start_date === activeWeekStartDate).length > 0 && (
             <span className="absolute top-0.5 right-3 w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center">
-              {weeklyPlan.length}
+              {weeklyPlan.filter((p) => p.week_start_date === activeWeekStartDate).length}
             </span>
           )}
         </button>
@@ -1352,7 +1817,7 @@ export const App: React.FC = () => {
         onClose={() => setActiveBlendModal(null)}
         onAddExtraToGrocery={async (itemName, aisle) => {
           const newEx: GroceryExtra = {
-            id: `extra-${Date.now()}-${Math.random()}`,
+            id: generateUuid(),
             week_start_date: activeWeekStartDate,
             item_name: itemName,
             aisle,
@@ -1361,6 +1826,7 @@ export const App: React.FC = () => {
           setExtras((prev) => [...prev, newEx]);
           if (supaStatus.tablesReady) {
             const payload: any = {
+              id: newEx.id,
               week_start_date: activeWeekStartDate,
               item_name: itemName,
               aisle,
@@ -1374,7 +1840,7 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* AI Camera Photo Scanner Modal (Spice Cabinet + Fridge) */}
+      {/* AI Camera Photo Scanner Modal (Spice Cabinet + Fridge + Deep Freezer) */}
       <PhotoScannerModal
         isOpen={photoScannerState.open}
         initialMode={photoScannerState.mode}
@@ -1388,11 +1854,19 @@ export const App: React.FC = () => {
             handleAddCabinetItem(item.name, item.category, 'in_stock')
           );
           showToast(
-            `📸 Auto-imported ${items.length} spices/sauces into your Cabinet as In-Stock!`
+            `📸 Auto-imported ${items.length} items into your Household Inventory!`
           );
           setActiveTab('cabinet');
         }}
         onImportToFridge={(items) => {
+          items.forEach((name) =>
+            handleAddCabinetItem(name, 'Refrigerator', 'in_stock', {
+              fridge_qty: 1,
+              freezer_qty: 0,
+              pantry_qty: 0,
+              unit: 'item',
+            })
+          );
           setOnHandFridgeItems((prev) => {
             const merged = Array.from(new Set([...prev, ...items]));
             localStorage.setItem(
@@ -1402,7 +1876,7 @@ export const App: React.FC = () => {
             return merged;
           });
           showToast(
-            `📸 Added ${items.length} scanned ingredients to your Fridge Matcher!`
+            `📸 Added ${items.length} scanned Fridge items to your Inventory & Recipe Matcher!`
           );
           setActiveTab('catalog');
         }}

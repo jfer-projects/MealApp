@@ -61,9 +61,11 @@ interface GroceryViewProps {
   checkedGroceryKeys: Record<string, boolean>;
   onToggleGroceryKey: (key: string) => void;
   hellofreshPrice?: number;
-  onAddExtra: (itemName: string, aisle: string) => void;
+  onAddExtra: (itemName: string, aisle: string, isRecurring?: boolean) => void;
   onToggleExtra: (id: string) => void;
+  onToggleExtraRecurring?: (id: string) => void;
   onDeleteExtra: (id: string) => void;
+  onMarkItemInInventory?: (itemName: string, aisle: string) => void;
   onAddToPlan: (recipeId: string, day: DayOfWeek, servings: ServingsSize) => void;
   onRemoveFromPlan: (planId: string) => void;
   onUpdatePlanServings: (planId: string, servings: ServingsSize) => void;
@@ -105,7 +107,9 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
   hellofreshPrice = 11.49,
   onAddExtra,
   onToggleExtra,
+  onToggleExtraRecurring,
   onDeleteExtra,
+  onMarkItemInInventory,
   onAddToPlan,
   onRemoveFromPlan,
   onUpdatePlanServings,
@@ -114,6 +118,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
   const [newExtraName, setNewExtraName] = useState('');
   const [newExtraQty, setNewExtraQty] = useState('');
   const [newExtraAisle, setNewExtraAisle] = useState('Household & Extras');
+  const [newExtraRecurring, setNewExtraRecurring] = useState(false);
   const [recipeSearch, setRecipeSearch] = useState('');
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [showSmsPreview, setShowSmsPreview] = useState(false);
@@ -125,8 +130,12 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
     [weeklyPlan, activeWeekStartDate]
   );
 
+  // Include both this week's extras AND recurring weekly staples
   const currentWeekExtras = useMemo(
-    () => extras.filter((e) => e.week_start_date === activeWeekStartDate),
+    () =>
+      extras.filter(
+        (e) => e.week_start_date === activeWeekStartDate || e.is_recurring
+      ),
     [extras, activeWeekStartDate]
   );
 
@@ -244,9 +253,10 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
     const label = newExtraQty.trim()
       ? `${newExtraQty.trim()} — ${newExtraName.trim()}`
       : newExtraName.trim();
-    onAddExtra(label, newExtraAisle);
+    onAddExtra(label, newExtraAisle, newExtraRecurring);
     setNewExtraName('');
     setNewExtraQty('');
+    setNewExtraRecurring(false);
   };
 
   const handleQuickAddRecipeToGrocery = (recipeId: string) => {
@@ -600,6 +610,15 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
               <option value="Grains & Bakery">Grains &amp; Bakery</option>
               <option value="Spices & Pantry">Spices &amp; Pantry</option>
             </select>
+            <label className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 px-2 py-1.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={newExtraRecurring}
+                onChange={(e) => setNewExtraRecurring(e.target.checked)}
+                className="rounded border-slate-300 text-emerald-600"
+              />
+              📌 Weekly Staple
+            </label>
             <button
               type="submit"
               className="px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold cursor-pointer"
@@ -646,6 +665,8 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                   className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl border text-xs ${
                     ex.checked
                       ? 'bg-slate-100 border-slate-200 text-slate-400 line-through'
+                      : ex.is_recurring
+                      ? 'bg-amber-50/80 border-amber-300 text-slate-900 font-bold'
                       : 'bg-emerald-50/70 border-emerald-200 text-slate-900 font-bold'
                   }`}
                 >
@@ -661,6 +682,24 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                       ({ex.aisle})
                     </span>
                   </span>
+                  {onToggleExtraRecurring && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleExtraRecurring(ex.id)}
+                      className={`px-1.5 py-0.5 rounded-md text-[10px] font-extrabold transition cursor-pointer ${
+                        ex.is_recurring
+                          ? 'bg-amber-200 text-amber-950'
+                          : 'bg-white/80 text-slate-400 hover:text-amber-800'
+                      }`}
+                      title={
+                        ex.is_recurring
+                          ? 'Pinned as Weekly Staple (appears every week)'
+                          : 'Pin as recurring Weekly Staple'
+                      }
+                    >
+                      📌 {ex.is_recurring ? 'Staple' : 'Pin'}
+                    </button>
+                  )}
                   <button
                     onClick={() => onDeleteExtra(ex.id)}
                     className="text-slate-400 hover:text-rose-600 cursor-pointer"
@@ -786,6 +825,20 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                           </p>
                         </div>
                       </div>
+
+                      {!item.isStruckByCabinet && onMarkItemInInventory && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onMarkItemInInventory(item.name, item.aisle);
+                          }}
+                          className="px-2 py-1 rounded-xl bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-900 text-[10px] font-extrabold shrink-0 transition cursor-pointer"
+                          title="Already have this in your Fridge/Freezer/Pantry? Mark it in-stock in Kitchen Inventory!"
+                        >
+                          ✓ Have It
+                        </button>
+                      )}
                     </div>
                   );
                 })}

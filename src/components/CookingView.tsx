@@ -6,18 +6,22 @@ import {
   Clock,
   Flame,
   GitBranch,
+  Heart,
   Pause,
   Play,
   RotateCcw,
   ShoppingCart,
   Sparkles,
   Sun,
+  ThumbsDown,
+  ThumbsUp,
   Users,
   Wind,
 } from 'lucide-react';
 import {
   Recipe,
   RecipeFeedback,
+  RecipeRating,
   ServingsSize,
 } from '../types/freshdiy';
 import {
@@ -37,6 +41,9 @@ interface CookingViewProps {
   isDairyFree: boolean;
   geminiApiKey?: string;
   feedbackHistory: RecipeFeedback[];
+  recipeRating?: RecipeRating;
+  onToggleFavorite?: (recipeId: string) => void;
+  onMarkRecipeCooked?: (recipe: Recipe, rating?: -1 | 0 | 1) => void;
   onChangeServings: (s: ServingsSize) => void;
   onSelectVersion: (r: Recipe) => void;
   onSubmitFeedbackAndFork: (
@@ -65,6 +72,9 @@ export const CookingView: React.FC<CookingViewProps> = ({
   isDairyFree,
   geminiApiKey = '',
   feedbackHistory,
+  recipeRating,
+  onToggleFavorite,
+  onMarkRecipeCooked,
   onChangeServings,
   onSelectVersion,
   onSubmitFeedbackAndFork,
@@ -592,6 +602,65 @@ export const CookingView: React.FC<CookingViewProps> = ({
               </div>
             );
           })}
+
+          {/* Mark Meal as Cooked & Family Rating Bar */}
+          {onMarkRecipeCooked && (
+            <section className="rounded-2xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/60 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  Finished Cooking Dinner?
+                  {recipeRating?.times_cooked ? (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                      Cooked {recipeRating.times_cooked}x
+                    </span>
+                  ) : null}
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Mark this meal cooked to automatically deduct used packages from your Fridge, Deep Freezer &amp; Pantry inventory.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {onToggleFavorite && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleFavorite(recipe.original_id || recipe.id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
+                      recipeRating?.is_favorite
+                        ? 'bg-rose-600 text-white border-rose-600'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300 hover:text-rose-600'
+                    }`}
+                  >
+                    <Heart
+                      className={`w-3.5 h-3.5 ${
+                        recipeRating?.is_favorite ? 'fill-current' : ''
+                      }`}
+                    />
+                    {recipeRating?.is_favorite ? 'Favorited' : 'Favorite'}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => onMarkRecipeCooked(recipe, 1)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer"
+                >
+                  <ThumbsUp className="w-3.5 h-3.5" />
+                  Cooked &amp; Loved It!
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onMarkRecipeCooked(recipe, -1)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-700 hover:text-rose-700 text-xs font-bold transition cursor-pointer"
+                >
+                  <ThumbsDown className="w-3.5 h-3.5" />
+                  Cooked (Pass Next Time)
+                </button>
+              </div>
+            </section>
+          )}
 
           {/* AI Recipe Versioning & Feedback Loop Card */}
           <section className="rounded-2xl border-2 border-violet-200 bg-violet-50/40 p-6 space-y-4">

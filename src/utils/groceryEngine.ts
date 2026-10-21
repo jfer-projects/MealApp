@@ -9,6 +9,135 @@ import {
 import { evaluateBlendStock, HELLOFRESH_PROPRIETARY_BLENDS } from './blendDecoder';
 import { formatAmount, transformIngredient } from './dairyEngine';
 
+export interface ItemQuantityBreakdown {
+  freezer: number;
+  fridge: number;
+  pantry: number;
+  total: number;
+  unit: string;
+  hasExplicitCounts: boolean;
+}
+
+/**
+ * Computes location-specific quantities for a unified CabinetItem card.
+ * Gracefully handles legacy items that only had `category` + `status`.
+ */
+export function getItemQuantities(item: CabinetItem): ItemQuantityBreakdown {
+  const hasExplicit =
+    item.freezer_qty !== undefined ||
+    item.fridge_qty !== undefined ||
+    item.pantry_qty !== undefined;
+
+  const defaultUnit =
+    item.unit ||
+    (item.category === 'Freezer & Deep Freeze'
+      ? 'pkg'
+      : item.category === 'Refrigerator'
+      ? 'item'
+      : 'item');
+
+  if (!hasExplicit) {
+    const activeCount = item.status === 'out_of_stock' ? 0 : 1;
+    if (item.category === 'Freezer & Deep Freeze') {
+      return {
+        freezer: activeCount,
+        fridge: 0,
+        pantry: 0,
+        total: activeCount,
+        unit: defaultUnit,
+        hasExplicitCounts: false,
+      };
+    }
+    if (item.category === 'Refrigerator') {
+      return {
+        freezer: 0,
+        fridge: activeCount,
+        pantry: 0,
+        total: activeCount,
+        unit: defaultUnit,
+        hasExplicitCounts: false,
+      };
+    }
+    return {
+      freezer: 0,
+      fridge: 0,
+      pantry: activeCount,
+      total: activeCount,
+      unit: defaultUnit,
+      hasExplicitCounts: false,
+    };
+  }
+
+  const freezer = Math.max(0, Number(item.freezer_qty ?? 0));
+  const fridge = Math.max(0, Number(item.fridge_qty ?? 0));
+  const pantry = Math.max(0, Number(item.pantry_qty ?? 0));
+  const total = freezer + fridge + pantry;
+
+  return {
+    freezer,
+    fridge,
+    pantry,
+    total,
+    unit: defaultUnit,
+    hasExplicitCounts: true,
+  };
+}
+
+/**
+ * Derives StockStatus from location quantities when counts are tracked.
+ */
+export function deriveStockStatusFromQuantities(
+  freezer: number,
+  fridge: number,
+  pantry: number,
+  fallbackStatus: StockStatus = 'in_stock'
+): StockStatus {
+  const total = freezer + fridge + pantry;
+  if (total <= 0) return 'out_of_stock';
+  return fallbackStatus === 'out_of_stock' ? 'in_stock' : fallbackStatus;
+}
+
+/**
+ * Ensures any duplicate items by name are merged into a single unified card
+ * combining their Freezer, Fridge, and Pantry counts.
+ */
+export function mergeDuplicateCabinetItems(items: CabinetItem[]): CabinetItem[] {
+  const byName = new Map<string, CabinetItem>();
+
+  for (const item of items) {
+    const key = item.item_name.trim().toLowerCase();
+    if (!key) continue;
+    const existing = byName.get(key);
+    if (!existing) {
+      byName.set(key, item);
+    } else {
+      const q1 = getItemQuantities(existing);
+      const q2 = getItemQuantities(item);
+      const freezer = q1.freezer + q2.freezer;
+      const fridge = q1.fridge + q2.fridge;
+      const pantry = q1.pantry + q2.pantry;
+      const status = deriveStockStatusFromQuantities(
+        freezer,
+        fridge,
+        pantry,
+        existing.status === 'in_stock' || item.status === 'in_stock'
+          ? 'in_stock'
+          : existing.status
+      );
+      byName.set(key, {
+        ...existing,
+        freezer_qty: freezer,
+        fridge_qty: fridge,
+        pantry_qty: pantry,
+        unit: existing.unit || item.unit || q1.unit,
+        status,
+      });
+    }
+  }
+
+  return Array.from(byName.values());
+}
+
 const AISLE_ORDER = [
   'Produce',
   'Meat & Seafood',
@@ -210,24 +339,75 @@ export function deductCabinetForCompletedMeals(
     if (!recipe) continue;
 
     for (const ing of recipe.ingredients_json) {
-      utilizedNames.add(ing.name.toLowerCase());
+      utilizedNames.add(ing.name.toLowerCase().trim());
       if (ing.blend_name) {
         const blendDef = HELLOFRESH_PROPRIETARY_BLENDS.find(
           (b) => b.name.toLowerCase() === ing.blend_name?.toLowerCase()
         );
         if (blendDef) {
           for (const comp of blendDef.components) {
-            utilizedNames.add(comp.spiceName.toLowerCase());
+            utilizedNames.add(comp.spiceName.toLowerCase().trim());
           }
         }
       }
     }
   }
 
+  const utilizedArr = Array.from(utilizedNames);
   const deductedNames: string[] = [];
+
   const updatedCabinet = currentCabinet.map((cab) => {
-    if (!utilizedNames.has(cab.item_name.toLowerCase())) {
+    const cabLower = cab.item_name.toLowerCase().trim();
+    const isMatched =
+      utilizedNames.has(cabLower) ||
+      utilizedArr.some(
+        (u) =>
+          (u.length >= 4 && cabLower.includes(u)) ||
+          (cabLower.length >= 4 && u.includes(cabLower))
+      );
+
+    if (!isMatched) {
       return cab;
+    }
+
+    const qty = getItemQuantities(cab);
+    const isCountedZone =
+      qty.hasExplicitCounts ||
+      cab.category === 'Freezer & Deep Freeze' ||
+      cab.category === 'Refrigerator';
+
+    if (isCountedZone && qty.total > 0) {
+      let { freezer, fridge, pantry } = qty;
+      let locationUsed = 'Pantry';
+      // Deduct from Refrigerator first (thawed items first!), then Deep Freezer, then Pantry
+      if (fridge > 0) {
+        fridge -= 1;
+        locationUsed = 'Fridge';
+      } else if (freezer > 0) {
+        freezer -= 1;
+        locationUsed = 'Freezer';
+      } else if (pantry > 0) {
+        pantry -= 1;
+        locationUsed = 'Pantry';
+      }
+
+      const newTotal = freezer + fridge + pantry;
+      const nextStatus: StockStatus =
+        newTotal <= 0 ? 'out_of_stock' : newTotal === 1 && qty.total > 1 ? 'low' : 'in_stock';
+
+      deductedNames.push(
+        `${cab.item_name} (-1 from ${locationUsed}, ${newTotal} ${qty.unit} left)`
+      );
+
+      return {
+        ...cab,
+        freezer_qty: freezer,
+        fridge_qty: fridge,
+        pantry_qty: pantry,
+        usage_count: (cab.usage_count || 0) + 1,
+        status: nextStatus,
+        updated_at: new Date().toISOString(),
+      };
     }
 
     const nextUsage = (cab.usage_count || 0) + 1;

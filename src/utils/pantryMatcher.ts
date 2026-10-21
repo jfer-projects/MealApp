@@ -129,15 +129,26 @@ export function evaluateRecipeMatch(
       }
     }
 
-    // 3. Check if directly in stock (or low) in the Spice & Pantry Cabinet
+    // 3. Check if directly in stock (or low) in the Kitchen Inventory (Freezer, Fridge, or Spice Cabinet)
     const cabMatch = cabinet.find(
       (c) =>
         c.status !== 'out_of_stock' &&
-        ingredientMatchesTerm(ing.name, c.item_name)
+        (ingredientMatchesTerm(ing.name, c.item_name) ||
+          (ing.original_dairy_name &&
+            ingredientMatchesTerm(ing.original_dairy_name, c.item_name)))
     );
 
     if (cabMatch) {
-      matchedCabinetItems.push(ing.name);
+      const isFreezerOrFridge =
+        cabMatch.category === 'Freezer & Deep Freeze' ||
+        cabMatch.category === 'Refrigerator' ||
+        (cabMatch.freezer_qty ?? 0) > 0 ||
+        (cabMatch.fridge_qty ?? 0) > 0;
+      if (isFreezerOrFridge) {
+        matchedFridgeItems.push(ing.name);
+      } else {
+        matchedCabinetItems.push(ing.name);
+      }
       continue;
     }
 

@@ -31,14 +31,21 @@ export interface AuthResult {
  */
 export async function signUpWithHousehold(params: SignUpParams): Promise<AuthResult> {
   const { email, password, displayName, householdMode, householdName, inviteCode } = params;
+  const cleanName = displayName.trim() || 'Me';
+  const cleanCode = householdMode === 'join' && inviteCode ? inviteCode.trim().toUpperCase() : null;
 
   try {
+    // Household choices are saved on the account so they still apply if the user
+    // has to confirm their email first (there is no session until then).
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
+        emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
         data: {
-          display_name: displayName.trim() || 'Parent',
+          display_name: cleanName,
+          pending_invite_code: cleanCode,
+          pending_household_name: householdMode === 'create' ? householdName?.trim() || null : null,
         },
       },
     });
@@ -52,88 +59,22 @@ export async function signUpWithHousehold(params: SignUpParams): Promise<AuthRes
       return { ok: false, message: 'Could not create account. Please try again.' };
     }
 
-    let household: Household | null = null;
-    let membership: HouseholdMember | null = null;
-
-    if (householdMode === 'join' && inviteCode) {
-      const cleanCode = inviteCode.trim().toUpperCase();
-      const { data: foundHousehold, error: findError } = await supabase
-        .from('households')
-        .select('*')
-        .eq('invite_code', cleanCode)
-        .maybeSingle();
-
-      if (findError || !foundHousehold) {
-        return {
-          ok: true,
-          user: {
-            id: authUser.id,
-            email: authUser.email || email,
-            display_name: displayName,
-          },
-          message: `Account created, but invite code "${cleanCode}" was not found. You can link your family later in Settings.`,
-        };
-      }
-
-      household = foundHousehold as Household;
-
-      // Insert membership
-      const { data: newMember } = await supabase
-        .from('household_members')
-        .insert({
-          household_id: household.id,
-          user_id: authUser.id,
-          display_name: displayName.trim() || 'Family Member',
-          role: 'member',
-        })
-        .select()
-        .single();
-
-      membership = newMember as HouseholdMember;
-    } else {
-      // Create new Household
-      const newCode = generateInviteCode();
-      const hName = householdName?.trim() || `${displayName.trim()}'s Family Kitchen`;
-
-      const { data: createdHousehold, error: hError } = await supabase
-        .from('households')
-        .insert({
-          name: hName,
-          invite_code: newCode,
-          created_by: authUser.id,
-        })
-        .select()
-        .single();
-
-      if (!hError && createdHousehold) {
-        household = createdHousehold as Household;
-
-        const { data: newMember } = await supabase
-          .from('household_members')
-          .insert({
-            household_id: household.id,
-            user_id: authUser.id,
-            display_name: displayName.trim() || 'Parent',
-            role: 'owner',
-          })
-          .select()
-          .single();
-
-        membership = newMember as HouseholdMember;
-      }
+    if (!authData.session) {
+      return {
+        ok: true,
+        session: null,
+        message: cleanCode
+          ? `Check your email to confirm your account. You'll join household ${cleanCode} when you first sign in.`
+          : 'Check your email to confirm your account, then sign in.',
+      };
     }
 
+    const profile = await fetchUserProfile(authUser.id, authUser.email || email);
     return {
       ok: true,
       session: authData.session,
-      user: {
-        id: authUser.id,
-        email: authUser.email || email,
-        display_name: displayName,
-        household,
-        household_member: membership,
-      },
-      message: 'Account successfully created!',
+      user: profile,
+      message: 'Account created!',
     };
   } catch (err) {
     return {
@@ -196,98 +137,64 @@ export async function fetchUserProfile(userId: string, email: string): Promise<U
       .eq('user_id', userId)
       .limit(1);
 
-    if (memberErr || !memberRows || memberRows.length === 0) {
-      // Check if user created a household directly
-      const { data: directHousehold } = await supabase
-        .from('households')
-        .select('*')
-        .eq('created_by', userId)
-        .limit(1);
-
-      if (directHousehold && directHousehold.length > 0) {
-        const h = directHousehold[0] as Household;
-        // Auto-link owner membership
-        const { data: createdMember } = await supabase
-          .from('household_members')
-          .upsert({
-            household_id: h.id,
-            user_id: userId,
-            display_name: 'Parent',
-            role: 'owner',
-          })
-          .select()
-          .single();
-
-        return {
-          id: userId,
-          email,
-          display_name: createdMember?.display_name || 'Parent',
-          household: h,
-          household_member: createdMember as HouseholdMember,
-        };
-      }
-
-      // If user is authenticated but has no household yet (e.g. signup occurred before email confirmation),
-      // auto-create a real private household with a unique invite code.
-      try {
-        const { data: userData } = await supabase.auth.getUser();
-        const userMeta = userData?.user?.user_metadata;
-        const displayName = userMeta?.display_name || email.split('@')[0] || 'My';
-        const newCode = generateInviteCode();
-        const kitchenName = `${displayName}'s Kitchen`;
-
-        const { data: newHousehold, error: hCreateErr } = await supabase
-          .from('households')
-          .insert({
-            name: kitchenName,
-            invite_code: newCode,
-            created_by: userId,
-          })
-          .select()
-          .single();
-
-        if (!hCreateErr && newHousehold) {
-          const { data: newMember } = await supabase
-            .from('household_members')
-            .insert({
-              household_id: newHousehold.id,
-              user_id: userId,
-              display_name: displayName,
-              role: 'owner',
-            })
-            .select()
-            .single();
-
-          return {
-            id: userId,
-            email,
-            display_name: displayName,
-            household: newHousehold as Household,
-            household_member: newMember as HouseholdMember,
-          };
-        }
-      } catch (autoCreateErr) {
-        console.warn('Auto-create household fallback error:', autoCreateErr);
-      }
-
+    if (!memberErr && memberRows && memberRows.length > 0) {
+      const member = memberRows[0];
+      const household = (member as any).households as Household;
       return {
         id: userId,
         email,
-        display_name: 'Family Member',
-        household: null,
-        household_member: null,
+        display_name: member.display_name || 'Family Member',
+        household: household || null,
+        household_member: member as HouseholdMember,
       };
     }
 
-    const member = memberRows[0];
-    const household = (member as any).households as Household;
+    // 2. No household yet (common when email confirmation was on during signup).
+    //    Use details saved at signup to join the invited household or create a new one.
+    const { data: userData } = await supabase.auth.getUser();
+    const meta = (userData?.user?.user_metadata || {}) as Record<string, string | undefined>;
+    const displayName = meta.display_name || email.split('@')[0] || 'Me';
+    const pendingInvite = meta.pending_invite_code;
+
+    if (pendingInvite) {
+      const { data: joinData, error: joinErr } = await supabase.rpc('join_household_with_code', {
+        invite_code_input: pendingInvite,
+        member_name: displayName,
+      });
+      if (!joinErr && joinData?.ok) {
+        await supabase.auth.updateUser({ data: { pending_invite_code: null } });
+        return fetchUserProfile(userId, email);
+      }
+    }
+
+    const { data: ensured, error: ensureErr } = await supabase.rpc('ensure_my_household', {
+      member_name: displayName,
+      kitchen_name: meta.pending_household_name || `${displayName}'s Kitchen`,
+    });
+
+    if (!ensureErr && ensured?.ok && ensured.household) {
+      return {
+        id: userId,
+        email,
+        display_name: ensured.member?.display_name || displayName,
+        household: ensured.household as Household,
+        household_member: (ensured.member as HouseholdMember) || null,
+      };
+    }
+
+    if (ensureErr) {
+      console.warn(
+        'ensure_my_household is unavailable. Run supabase/migration_sync_repair.sql in Supabase.',
+        ensureErr.message
+      );
+    }
 
     return {
       id: userId,
       email,
-      display_name: member.display_name || 'Family Member',
-      household: household || null,
-      household_member: member as HouseholdMember,
+      display_name: displayName,
+      household: null,
+      household_member: null,
     };
   } catch (err) {
     console.error('Error fetching user profile:', err);
