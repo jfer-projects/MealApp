@@ -81,6 +81,7 @@ export interface RecipeFeedback {
 export interface CabinetItem {
   id: string;
   user_id?: string | null;
+  household_id?: string | null;
   item_name: string;
   category: 'Spices' | 'Broth Concentrates' | 'Sauces' | 'Oils & Vinegars' | 'Pantry';
   status: StockStatus;
@@ -91,6 +92,7 @@ export interface CabinetItem {
 export interface WeeklyPlanItem {
   id: string;
   user_id?: string | null;
+  household_id?: string | null;
   week_start_date: string;
   recipe_id: string;
   day_of_week: DayOfWeek;
@@ -101,10 +103,37 @@ export interface WeeklyPlanItem {
 
 export interface GroceryExtra {
   id: string;
+  user_id?: string | null;
+  household_id?: string | null;
   week_start_date: string;
   item_name: string;
   aisle: string;
   checked: boolean;
+}
+
+export interface Household {
+  id: string;
+  name: string;
+  invite_code: string;
+  created_by?: string | null;
+  created_at?: string;
+}
+
+export interface HouseholdMember {
+  id: string;
+  household_id: string;
+  user_id: string;
+  display_name: string;
+  role: 'owner' | 'member';
+  created_at?: string;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  display_name: string;
+  household?: Household | null;
+  household_member?: HouseholdMember | null;
 }
 
 export interface AggregatedGroceryItem {

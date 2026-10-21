@@ -4,18 +4,26 @@ import {
   Camera,
   ChefHat,
   Database,
+  Home,
+  KeyRound,
   Leaf,
+  Lock,
+  LogOut,
   Package,
   RefreshCw,
   ShoppingCart,
   Sparkles,
+  Users,
 } from 'lucide-react';
+import { AuthScreen } from './components/AuthScreen';
 import { BlendRecipeModal } from './components/BlendRecipeModal';
 import { CabinetView } from './components/CabinetView';
 import { CatalogPlannerView } from './components/CatalogPlannerView';
 import { CookingView } from './components/CookingView';
+import { FamilySettingsModal } from './components/FamilySettingsModal';
 import { GroceryView } from './components/GroceryView';
 import { PhotoScannerModal } from './components/PhotoScannerModal';
+import { fetchUserProfile, signOut } from './lib/authService';
 import {
   checkSupabaseTablesReady,
   subscribeToFamilyRealtime,
@@ -28,10 +36,12 @@ import {
   DayOfWeek,
   DAYS_OF_WEEK,
   GroceryExtra,
+  Household,
   Recipe,
   RecipeFeedback,
   ServingsSize,
   StockStatus,
+  UserProfile,
   WeeklyPlanItem,
 } from './types/freshdiy';
 import { forkRecipeFromFeedback } from './utils/aiVersioningEngine';
@@ -151,6 +161,43 @@ export const App: React.FC = () => {
   // Notification banner
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // User Authentication & Household State
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [isFamilyModalOpen, setIsFamilyModalOpen] = useState<boolean>(false);
+
+  // Supabase Auth Session & Lifecycle Listener
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        fetchUserProfile(session.user.id, session.user.email || '').then((prof) => {
+          if (isMounted) {
+            setCurrentUser(prof);
+            setAuthChecking(false);
+          }
+        });
+      } else {
+        if (isMounted) setAuthChecking(false);
+      }
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const prof = await fetchUserProfile(session.user.id, session.user.email || '');
+        if (isMounted) setCurrentUser(prof);
+      } else {
+        if (isMounted) setCurrentUser(null);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   // Supabase Status
   const [supaStatus, setSupaStatus] = useState<SupabaseSyncStatus>({
     connected: false,
@@ -185,6 +232,17 @@ export const App: React.FC = () => {
         }
 
         if (status.tablesReady) {
+          const householdId = currentUser?.household?.id;
+          let cabQuery = supabase.from('cabinet').select('*').order('item_name', { ascending: true });
+          let planQuery = supabase.from('weekly_plan').select('*');
+          let extraQuery = supabase.from('grocery_extras').select('*').order('created_at', { ascending: true });
+
+          if (householdId) {
+            cabQuery = cabQuery.or(`household_id.eq.${householdId},user_id.eq.${currentUser?.id},household_id.is.null`);
+            planQuery = planQuery.or(`household_id.eq.${householdId},user_id.eq.${currentUser?.id},household_id.is.null`);
+            extraQuery = extraQuery.or(`household_id.eq.${householdId},user_id.eq.${currentUser?.id},household_id.is.null`);
+          }
+
           const [
             { data: remoteForks },
             { data: remoteCabinet },
@@ -197,19 +255,13 @@ export const App: React.FC = () => {
               .select('*')
               .gt('version', 1)
               .order('version', { ascending: false }),
-            supabase
-              .from('cabinet')
-              .select('*')
-              .order('item_name', { ascending: true }),
-            supabase.from('weekly_plan').select('*'),
+            cabQuery,
+            planQuery,
             supabase
               .from('recipe_feedback')
               .select('*')
               .order('created_at', { ascending: false }),
-            supabase
-              .from('grocery_extras')
-              .select('*')
-              .order('created_at', { ascending: true }),
+            extraQuery,
           ]);
 
           if (remoteCabinet && remoteCabinet.length > 0) {
@@ -280,7 +332,7 @@ export const App: React.FC = () => {
       }
     }
     loadInitialData();
-  }, []);
+  }, [currentUser?.id, currentUser?.household?.id]);
 
   // Multi-device Realtime Sync for Valleria & Family (no paid SMS)
   useEffect(() => {
@@ -288,14 +340,21 @@ export const App: React.FC = () => {
 
     const unsubscribe = subscribeToFamilyRealtime(async (table) => {
       try {
+        const hId = currentUser?.household?.id;
         if (table === 'weekly_plan') {
-          const { data } = await supabase.from('weekly_plan').select('*');
+          let query = supabase.from('weekly_plan').select('*');
+          if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id},household_id.is.null`);
+          const { data } = await query;
           if (data) setWeeklyPlan(data as WeeklyPlanItem[]);
         } else if (table === 'cabinet') {
-          const { data } = await supabase.from('cabinet').select('*').order('item_name', { ascending: true });
+          let query = supabase.from('cabinet').select('*').order('item_name', { ascending: true });
+          if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id},household_id.is.null`);
+          const { data } = await query;
           if (data) setCabinet(data as CabinetItem[]);
         } else if (table === 'grocery_extras') {
-          const { data } = await supabase.from('grocery_extras').select('*').order('created_at', { ascending: true });
+          let query = supabase.from('grocery_extras').select('*').order('created_at', { ascending: true });
+          if (hId) query = query.or(`household_id.eq.${hId},user_id.eq.${currentUser?.id},household_id.is.null`);
+          const { data } = await query;
           if (data) setExtras(data as GroceryExtra[]);
         }
       } catch (err) {
@@ -306,7 +365,7 @@ export const App: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, [supaStatus.tablesReady]);
+  }, [supaStatus.tablesReady, currentUser?.id, currentUser?.household?.id]);
 
   useEffect(() => {
     const forksOnly = recipes.filter((r) => r.version > 1);
@@ -396,13 +455,25 @@ export const App: React.FC = () => {
     });
 
     if (supaStatus.tablesReady) {
-      await supabase.from('weekly_plan').upsert({
+      const payload: any = {
         week_start_date: activeWeekStartDate,
         recipe_id: recipeId,
         day_of_week: day,
         servings,
         status: 'planned',
-      });
+      };
+      if (currentUser?.household?.id) payload.household_id = currentUser.household.id;
+      if (currentUser?.id) payload.user_id = currentUser.id;
+
+      try {
+        const { error } = await supabase.from('weekly_plan').upsert(payload);
+        if (error && error.message.includes('household_id')) {
+          delete payload.household_id;
+          await supabase.from('weekly_plan').upsert(payload);
+        }
+      } catch (err) {
+        console.warn('Upsert plan error:', err);
+      }
     }
   };
 
@@ -512,15 +583,24 @@ export const App: React.FC = () => {
       return [newItem, ...prev];
     });
     if (supaStatus.tablesReady) {
-      await supabase.from('cabinet').upsert(
-        {
-          item_name: name,
-          category,
-          status,
-          usage_count: 0,
-        },
-        { onConflict: 'item_name' }
-      );
+      const payload: any = {
+        item_name: name,
+        category,
+        status,
+        usage_count: 0,
+      };
+      if (currentUser?.household?.id) payload.household_id = currentUser.household.id;
+      if (currentUser?.id) payload.user_id = currentUser.id;
+
+      try {
+        const { error } = await supabase.from('cabinet').upsert(payload, { onConflict: 'item_name' });
+        if (error && error.message.includes('household_id')) {
+          delete payload.household_id;
+          await supabase.from('cabinet').upsert(payload, { onConflict: 'item_name' });
+        }
+      } catch (err) {
+        console.warn('Upsert cabinet error:', err);
+      }
     }
   };
 
@@ -638,6 +718,50 @@ export const App: React.FC = () => {
     [cabinet]
   );
 
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
+        <div className="w-14 h-14 rounded-3xl bg-emerald-600 text-white flex items-center justify-center shadow-2xl shadow-emerald-950/60 mb-3 animate-pulse border border-emerald-400/30">
+          <ChefHat className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-black text-white tracking-tight">
+          Fresh<span className="text-emerald-400">DIY</span>
+        </h2>
+        <p className="text-xs font-semibold text-slate-400 mt-1">Verifying Family Kitchen Session...</p>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <AuthScreen
+        onAuthenticated={(profile) => {
+          setCurrentUser(profile);
+          showToast(`👋 Welcome, ${profile.display_name}!`);
+        }}
+        onBypassOffline={() => {
+          setCurrentUser({
+            id: 'guest-user',
+            email: 'guest@freshdiy.local',
+            display_name: 'Guest Family',
+            household: {
+              id: 'guest-household',
+              name: 'Ferris Family Kitchen',
+              invite_code: 'FAM-DEMO',
+            },
+            household_member: {
+              id: 'guest-member',
+              household_id: 'guest-household',
+              user_id: 'guest-user',
+              display_name: 'Parent',
+              role: 'owner',
+            },
+          });
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 pb-20 md:pb-0">
       {/* Top Global Header (Compact on Mobile, Full on Desktop) */}
@@ -656,9 +780,20 @@ export const App: React.FC = () => {
                 <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
                   Fresh<span className="text-emerald-600">DIY</span>
                 </span>
-                <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-800">
-                  Family of 4 • Valleria &amp; You
-                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsFamilyModalOpen(true);
+                  }}
+                  className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition cursor-pointer"
+                  title="Manage Family Kitchen & Invite Valleria or Friends"
+                >
+                  <Home className="w-3 h-3 text-emerald-600" />
+                  <span>{currentUser.household?.name || 'Ferris Family'}</span>
+                  <span>•</span>
+                  <span>{currentUser.display_name}</span>
+                </button>
               </div>
               <p className="text-[10px] sm:text-xs text-slate-500 line-clamp-1">
                 {recipes.filter((r) => r.is_latest).length.toLocaleString()} HelloFresh Recipes • Dairy-Free • AI Kitchen
@@ -766,6 +901,16 @@ export const App: React.FC = () => {
                 <Database className="w-3.5 h-3.5" />
               )}
               {supaStatus.tablesReady ? 'Cloud Live' : 'Sync'}
+            </button>
+
+            {/* Family & Account Settings Button */}
+            <button
+              onClick={() => setIsFamilyModalOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 transition cursor-pointer"
+              title="Family Settings & Share Invite Link"
+            >
+              <Users className="w-3.5 h-3.5 text-emerald-700" />
+              <span className="hidden sm:inline">Family</span>
             </button>
           </div>
         </div>
@@ -1097,6 +1242,18 @@ export const App: React.FC = () => {
             `📸 Added ${items.length} scanned ingredients to your Fridge Matcher!`
           );
           setActiveTab('catalog');
+        }}
+      />
+
+      {/* Family Settings & Account Modal */}
+      <FamilySettingsModal
+        isOpen={isFamilyModalOpen}
+        onClose={() => setIsFamilyModalOpen(false)}
+        currentUser={currentUser}
+        onProfileUpdated={(updated) => setCurrentUser(updated)}
+        onSignOut={() => {
+          setCurrentUser(null);
+          showToast('Signed out of FreshDIY.');
         }}
       />
     </div>
