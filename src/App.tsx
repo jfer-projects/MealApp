@@ -143,81 +143,87 @@ export const App: React.FC = () => {
       const status = await checkSupabaseTablesReady();
       setSupaStatus(status);
 
-      if (status.tablesReady) {
-        const [
-          { data: remoteRecipes },
-          { data: remoteCabinet },
-          { data: remotePlan },
-          { data: remoteFeedback },
-          { data: remoteExtras },
-        ] = await Promise.all([
-          supabase
-            .from('recipes')
-            .select('*')
-            .order('version', { ascending: false }),
-          supabase
-            .from('cabinet')
-            .select('*')
-            .order('item_name', { ascending: true }),
-          supabase.from('weekly_plan').select('*'),
-          supabase
-            .from('recipe_feedback')
-            .select('*')
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('grocery_extras')
-            .select('*')
-            .order('created_at', { ascending: true }),
-        ]);
-
-        if (remoteCabinet && remoteCabinet.length > 0) {
-          setCabinet(remoteCabinet as CabinetItem[]);
-        }
-        if (remotePlan && remotePlan.length > 0) {
-          setWeeklyPlan(remotePlan as WeeklyPlanItem[]);
-        }
-        if (remoteFeedback && remoteFeedback.length > 0) {
-          setFeedbackList(remoteFeedback as RecipeFeedback[]);
-        }
-        if (remoteExtras && remoteExtras.length > 0) {
-          setExtras(remoteExtras as GroceryExtra[]);
-        }
-        if (remoteRecipes && remoteRecipes.length > 0) {
-          setRecipes(remoteRecipes as Recipe[]);
-          localStorage.setItem(
-            STORAGE_KEYS.recipes,
-            JSON.stringify(remoteRecipes)
-          );
-          return;
-        }
-      }
-
-      const cached = localStorage.getItem(STORAGE_KEYS.recipes);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached) as Recipe[];
-          if (parsed.length > 0) {
-            setRecipes(parsed);
-            return;
-          }
-        } catch {
-          // ignore
-        }
-      }
-
       try {
+        // Always load the full HelloFresh catalog JSON (supports 1,500+ recipes without 1,000-row PostgREST cap)
         const res = await fetch('/data/hellofresh_recipes.json');
-        const scraped: Recipe[] = await res.json();
-        setRecipes(scraped);
-        localStorage.setItem(STORAGE_KEYS.recipes, JSON.stringify(scraped));
+        const baseCatalog: Recipe[] = await res.json();
+
+        let forkedRecipes: Recipe[] = [];
+        const savedForks = localStorage.getItem('freshdiy_forked_recipes_v1');
+        if (savedForks) {
+          try {
+            forkedRecipes = JSON.parse(savedForks);
+          } catch {
+            // ignore
+          }
+        }
+
+        if (status.tablesReady) {
+          const [
+            { data: remoteForks },
+            { data: remoteCabinet },
+            { data: remotePlan },
+            { data: remoteFeedback },
+            { data: remoteExtras },
+          ] = await Promise.all([
+            supabase
+              .from('recipes')
+              .select('*')
+              .gt('version', 1)
+              .order('version', { ascending: false }),
+            supabase
+              .from('cabinet')
+              .select('*')
+              .order('item_name', { ascending: true }),
+            supabase.from('weekly_plan').select('*'),
+            supabase
+              .from('recipe_feedback')
+              .select('*')
+              .order('created_at', { ascending: false }),
+            supabase
+              .from('grocery_extras')
+              .select('*')
+              .order('created_at', { ascending: true }),
+          ]);
+
+          if (remoteCabinet && remoteCabinet.length > 0) {
+            setCabinet(remoteCabinet as CabinetItem[]);
+          }
+          if (remotePlan && remotePlan.length > 0) {
+            setWeeklyPlan(remotePlan as WeeklyPlanItem[]);
+          }
+          if (remoteFeedback && remoteFeedback.length > 0) {
+            setFeedbackList(remoteFeedback as RecipeFeedback[]);
+          }
+          if (remoteExtras && remoteExtras.length > 0) {
+            setExtras(remoteExtras as GroceryExtra[]);
+          }
+          if (remoteForks && remoteForks.length > 0) {
+            forkedRecipes = remoteForks as Recipe[];
+          }
+        }
+
+        const forkedOriginalIds = new Set(
+          forkedRecipes.map((f) => f.original_id || f.id)
+        );
+        const mergedCatalog = [
+          ...forkedRecipes,
+          ...baseCatalog.map((r) =>
+            forkedOriginalIds.has(r.original_id || r.id)
+              ? { ...r, is_latest: false }
+              : r
+          ),
+        ];
+
+        setRecipes(mergedCatalog);
 
         const existingPlan = localStorage.getItem(STORAGE_KEYS.plan);
-        if (!existingPlan && scraped.length >= 3) {
+        if (!existingPlan && mergedCatalog.length >= 3) {
           const starterPlan: WeeklyPlanItem[] = [
             {
               id: 'plan-mon',
               week_start_date: '2026-10-19',
-              recipe_id: scraped[0].id,
+              recipe_id: mergedCatalog[0].id,
               day_of_week: 'Monday',
               servings: 4,
               status: 'planned',
@@ -225,7 +231,7 @@ export const App: React.FC = () => {
             {
               id: 'plan-wed',
               week_start_date: '2026-10-19',
-              recipe_id: scraped[1].id,
+              recipe_id: mergedCatalog[1].id,
               day_of_week: 'Wednesday',
               servings: 4,
               status: 'planned',
@@ -233,7 +239,7 @@ export const App: React.FC = () => {
             {
               id: 'plan-fri',
               week_start_date: '2026-10-19',
-              recipe_id: scraped[2].id,
+              recipe_id: mergedCatalog[2].id,
               day_of_week: 'Friday',
               servings: 4,
               status: 'planned',
@@ -250,8 +256,12 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (recipes.length > 0) {
-      localStorage.setItem(STORAGE_KEYS.recipes, JSON.stringify(recipes));
+    const forksOnly = recipes.filter((r) => r.version > 1);
+    if (forksOnly.length > 0) {
+      localStorage.setItem(
+        'freshdiy_forked_recipes_v1',
+        JSON.stringify(forksOnly)
+      );
     }
   }, [recipes]);
 
@@ -559,7 +569,7 @@ export const App: React.FC = () => {
                 </span>
               </div>
               <p className="text-[10px] sm:text-xs text-slate-500 line-clamp-1">
-                526 HelloFresh Recipes • Dairy-Free • AI Kitchen
+                {recipes.filter((r) => r.is_latest).length.toLocaleString()} HelloFresh Recipes • Dairy-Free • AI Kitchen
               </p>
             </div>
           </div>

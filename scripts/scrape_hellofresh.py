@@ -57,36 +57,143 @@ COLLECTION_URLS = [
 ]
 
 SEARCH_QUERIES = [
-    "firecracker meatballs",
-    "crispy parmesan chicken",
-    "chicken fajitas",
-    "beef enchiladas",
-    "tuscan chicken",
-    "sweet soy salmon",
-    "smash burger",
-    "pork tacos",
-    "shawarma chicken",
-    "lemon herb orzo",
-    "blackened chicken penne",
-    "sheet pan pork chops",
-    "teriyaki beef bowls",
-    "honey mustard chicken",
-    "quesadillas",
-    "flatbread",
-    "coconut curry",
-    "garlic butter steak",
+    "chicken",
+    "beef",
+    "pork",
+    "salmon",
+    "shrimp",
+    "steak",
+    "turkey",
+    "sausage",
+    "tacos",
+    "pasta",
+    "spaghetti",
+    "penne",
+    "orzo",
     "gnocchi",
-    "ramen",
-    "bulgogi meatballs",
-    "poblano tacos",
-    "crispy chicken tenders",
+    "ravioli",
     "tortellini",
+    "burger",
+    "meatballs",
+    "fajitas",
+    "enchiladas",
+    "quesadillas",
+    "burrito",
+    "bowl",
+    "rice",
+    "noodle",
+    "ramen",
+    "udon",
+    "stir-fry",
+    "teriyaki",
+    "sweet soy",
+    "firecracker",
+    "bulgogi",
     "bibimbap",
+    "curry",
+    "coconut",
+    "thai",
+    "shawarma",
+    "gyro",
+    "mediterranean",
+    "tuscan",
+    "parmesan",
+    "lemon",
+    "garlic",
+    "honey",
+    "mustard",
+    "bbq",
+    "chipotle",
+    "poblano",
+    "southwest",
+    "tex-mex",
+    "blackened",
+    "cajun",
+    "sheet pan",
+    "flatbread",
+    "pita",
+    "sliders",
+    "tenders",
+    "cutlets",
+    "chops",
+    "loin",
+    "flank",
+    "sirloin",
+    "barramundi",
+    "tilapia",
+    "trout",
+    "cod",
+    "risotto",
+    "couscous",
+    "quinoa",
+    "farro",
+    "ciabatta",
+    "baguette",
+    "brioche",
+    "potato",
+    "sweet potato",
+    "broccoli",
+    "zucchini",
+    "green beans",
+    "carrots",
+    "asparagus",
+    "brussels sprouts",
+    "mushroom",
+    "spinach",
+    "kale",
+    "corn",
+    "black beans",
+    "chickpeas",
+    "tofu",
+    "halloumi",
+    "feta",
+    "mozzarella",
+    "cheddar",
+    "monterey jack",
+    "gouda",
+    "cream cheese",
+    "sour cream",
+    "pesto",
+    "marinara",
+    "alfredo",
+    "bolognese",
+    "marsala",
+    "piccata",
+    "apricot",
+    "fig",
+    "balsamic",
+    "cherry",
+    "peach",
+    "mango",
+    "pineapple",
+    "ponzu",
+    "hoisin",
+    "moo shu",
+    "sesame",
+    "ginger",
+    "sriracha",
+    "buffalo",
+    "ranch",
+    "dill",
+    "rosemary",
+    "thyme",
+    "cilantro",
+    "lime",
+    "enchilada",
     "flautas",
     "taquitos",
-    "gyro bowls",
-    "sesame chicken",
-    "apricot pork",
+    "tostadas",
+    "casserole",
+    "skillet",
+    "bake",
+    "roast",
+    "grilled",
+    "crispy",
+    "creamy",
+    "cheesy",
+    "zesty",
+    "smoky",
+    "savory",
 ]
 
 PROPRIETARY_BLENDS = [
@@ -547,15 +654,15 @@ def scrape_authentic_hellofresh_library() -> List[Dict[str, Any]]:
 
     print(f"[Scraper] Extracted {len(unique_recipes)} full multi-step recipes from collections. Expanding via Gateway Search...")
 
-    # 2. Query Gateway Search across 30 culinary categories to get 500+ unique full recipes
+    # 2. Query Gateway Search across 135+ culinary categories with take=100 to get 1,500-2,500+ unique full recipes
     def search_query(q: str) -> List[Dict[str, Any]]:
         found = []
         try:
             resp = requests.get(
                 "https://www.hellofresh.com/gw/recipes/recipes/search",
-                params={"country": "US", "locale": "en-US", "q": q, "take": 25},
+                params={"country": "US", "locale": "en-US", "q": q, "take": 100},
                 headers=auth_headers,
-                timeout=8,
+                timeout=10,
             )
             if resp.status_code == 200:
                 for raw_item in resp.json().get("items", []):
@@ -566,7 +673,7 @@ def scrape_authentic_hellofresh_library() -> List[Dict[str, Any]]:
             pass
         return found
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
         for batch in pool.map(search_query, SEARCH_QUERIES):
             for rec in batch:
                 norm = normalize_title(rec["title"])
@@ -584,12 +691,11 @@ def sync_clean_catalog_to_supabase(recipes: List[Dict[str, Any]]) -> None:
         return
     try:
         supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        # Remove old v1 recipes so no duplicate variations remain in Supabase
-        supabase.table("recipes").delete().eq("version", 1).execute()
-        for i in range(0, len(recipes), 25):
-            batch = recipes[i : i + 25]
+        # Upsert in batches of 50
+        for i in range(0, len(recipes), 50):
+            batch = recipes[i : i + 50]
             supabase.table("recipes").upsert(batch, on_conflict="id").execute()
-        print(f"[Supabase] Replaced catalog with {len(recipes)} unique authentic HelloFresh recipes in Supabase!")
+        print(f"[Supabase] Synced {len(recipes)} unique authentic HelloFresh recipes to Supabase!")
     except Exception as exc:
         print(f"[Supabase] Sync error: {exc}")
 
