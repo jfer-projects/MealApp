@@ -176,6 +176,19 @@ export const App: React.FC = () => {
     return saved ? parseFloat(saved) : 11.49;
   });
 
+  // Supabase Status
+  const [supaStatus, setSupaStatus] = useState<SupabaseSyncStatus>({
+    connected: false,
+    tablesReady: false,
+    lastSyncedAt: null,
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 5000);
+  };
+
   // Supabase Auth Session & Lifecycle Listener
   useEffect(() => {
     let isMounted = true;
@@ -250,19 +263,6 @@ export const App: React.FC = () => {
         }
       });
   }, [currentUser?.household?.id, activeWeekStartDate, supaStatus.tablesReady]);
-
-  // Supabase Status
-  const [supaStatus, setSupaStatus] = useState<SupabaseSyncStatus>({
-    connected: false,
-    tablesReady: false,
-    lastSyncedAt: null,
-  });
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 5000);
-  };
 
   useEffect(() => {
     async function loadInitialData() {
