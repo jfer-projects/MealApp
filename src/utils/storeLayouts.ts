@@ -241,21 +241,32 @@ export function getItemStoreLocation(
 ): ItemStoreLocation {
   const cleanName = rawItemName.toLowerCase().trim();
 
-  // 1. Try keyword matching on store departments
+  // 1. Find the most specific (longest) keyword match across all store departments
+  // so e.g. "Kids Organic Apple Sauce Pouches" matches "apple sauce" (Snacks Aisle 7)
+  // rather than "apple" (Produce).
+  let bestDept: StoreDepartment | null = null;
+  let bestKwLen = 0;
+
   for (const dept of storeLayout.departments) {
     for (const kw of dept.keywords) {
-      if (cleanName.includes(kw) || kw.includes(cleanName)) {
-        return {
-          storeId: storeLayout.id,
-          storeName: storeLayout.name,
-          departmentId: dept.id,
-          departmentName: dept.name,
-          locationLabel: dept.locationLabel,
-          aisleNumber: dept.aisleNumber,
-          sortOrder: dept.sortOrder,
-        };
+      const kwClean = kw.toLowerCase().trim();
+      if (cleanName.includes(kwClean) && kwClean.length > bestKwLen) {
+        bestDept = dept;
+        bestKwLen = kwClean.length;
       }
     }
+  }
+
+  if (bestDept) {
+    return {
+      storeId: storeLayout.id,
+      storeName: storeLayout.name,
+      departmentId: bestDept.id,
+      departmentName: bestDept.name,
+      locationLabel: bestDept.locationLabel,
+      aisleNumber: bestDept.aisleNumber,
+      sortOrder: bestDept.sortOrder,
+    };
   }
 
   // 2. Fallback based on general grocery category if supplied

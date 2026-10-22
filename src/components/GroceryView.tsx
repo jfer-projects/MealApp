@@ -151,6 +151,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
 
   // Paste Shopping List from Shared Note Modal State
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [isGrocerySettingsOpen, setIsGrocerySettingsOpen] = useState(false);
   const [pastedText, setPastedText] = useState('');
   const [parsedNoteItems, setParsedNoteItems] = useState<ParsedNoteGroceryItem[]>([]);
 
@@ -753,183 +754,548 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* 1. DATED WEEK NAVIGATION & SHOPPER PROFILE BAR */}
-      <section className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Week Selector */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+    <div className="space-y-4 sm:space-y-5 pb-8">
+      {/* 1. COMPACT TOP BAR: WEEK PICKER + SHARE + SETTINGS SHEET BUTTON */}
+      <section className="bg-white rounded-2xl border border-slate-200 p-2.5 sm:p-3.5 shadow-xs space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          {/* Week Selector */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button
               onClick={() => onNavigateWeek(-1)}
-              className="p-2 rounded-xl bg-white hover:bg-slate-200 text-slate-700 shadow-2xs transition cursor-pointer"
+              className="p-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-700 shadow-2xs transition cursor-pointer"
               title="Previous Week"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <div className="px-3 py-1 text-center min-w-[170px]">
-              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 block">
-                Grocery List Week
-              </span>
-              <span className="text-xs sm:text-sm font-extrabold text-slate-900 flex items-center justify-center gap-1">
+            <div className="px-2 py-0.5 text-center">
+              <span className="text-xs font-extrabold text-slate-900 flex items-center justify-center gap-1 whitespace-nowrap">
                 <Calendar className="w-3.5 h-3.5 text-emerald-600" />
                 {formatWeekRange(activeWeekStartDate)}
               </span>
             </div>
             <button
               onClick={() => onNavigateWeek(1)}
-              className="p-2 rounded-xl bg-white hover:bg-slate-200 text-slate-700 shadow-2xs transition cursor-pointer"
+              className="p-1.5 rounded-xl bg-white hover:bg-slate-200 text-slate-700 shadow-2xs transition cursor-pointer"
               title="Next Week"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Primary Actions: Share + Options Sheet Toggle */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsGrocerySettingsOpen(!isGrocerySettingsOpen)}
+              className={`inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                isGrocerySettingsOpen
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+              }`}
+              title="Shopping As, On Check, Paste List, Email List & Store Route Settings"
+            >
+              <span>Options</span>
+            </button>
+
+            <button
+              onClick={handleSendToValleria}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition cursor-pointer"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share</span>
             </button>
           </div>
         </div>
 
-        {/* Shopper Mode Selector (Dynamic Household Members) */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
-            <span className="text-[11px] font-bold text-slate-500 px-2 flex items-center gap-1">
-              <User className="w-3 h-3" /> Shopping As:
-            </span>
-            {(() => {
-              const shopperOptions = Array.from(
-                new Set(
-                  [currentUserDisplayName, ...householdMembers]
-                    .map((n) => n.trim())
-                    .filter(Boolean)
-                )
-              );
-              if (shopperOptions.length < 2) {
-                shopperOptions.push('Partner / Family');
-              }
-              return shopperOptions.map((memberName) => {
-                const isSelected =
-                  activeFamilyMember === memberName ||
-                  (activeFamilyMember === 'Parent' && memberName === shopperOptions[0]) ||
-                  (activeFamilyMember === 'Valleria' && memberName === shopperOptions[1]);
-                return (
-                  <button
-                    key={memberName}
-                    onClick={() => onChangeFamilyMember(memberName)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition cursor-pointer ${
-                      isSelected
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {memberName === currentUserDisplayName ? `${memberName} (You)` : memberName}
-                  </button>
-                );
-              });
-            })()}
-          </div>
+        {/* Collapsible Settings Sheet (Shopping As, On Check, Paste, Email, View Mode) */}
+        {isGrocerySettingsOpen && (
+          <div className="pt-3 border-t border-slate-100 space-y-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-500 px-2 flex items-center gap-1">
+                  <User className="w-3 h-3" /> Shopping As:
+                </span>
+                {(() => {
+                  const shopperOptions = Array.from(
+                    new Set(
+                      [currentUserDisplayName, ...householdMembers]
+                        .map((n) => n.trim())
+                        .filter(Boolean)
+                    )
+                  );
+                  if (shopperOptions.length < 2) {
+                    shopperOptions.push('Partner / Family');
+                  }
+                  return shopperOptions.map((memberName) => {
+                    const isSelected =
+                      activeFamilyMember === memberName ||
+                      (activeFamilyMember === 'Parent' && memberName === shopperOptions[0]) ||
+                      (activeFamilyMember === 'Valleria' && memberName === shopperOptions[1]);
+                    return (
+                      <button
+                        key={memberName}
+                        onClick={() => onChangeFamilyMember(memberName)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {memberName === currentUserDisplayName ? `${memberName} (You)` : memberName}
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
 
-          {/* Check-off Inventory Transfer Preference */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
-            <span className="text-[11px] font-bold text-slate-500 px-2 flex items-center gap-1">
-              <Package className="w-3 h-3 text-emerald-600" /> On Check:
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-500 px-2 flex items-center gap-1">
+                  <Package className="w-3 h-3 text-emerald-600" /> On Check:
+                </span>
+                <select
+                  value={checkoffMovePref}
+                  onChange={(e) => {
+                    const val = e.target.value as 'ask' | 'always' | 'never';
+                    setCheckoffMovePref(val);
+                    localStorage.setItem('freshdiy_checkoff_move_pref_v1', val);
+                  }}
+                  className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 cursor-pointer"
+                >
+                  <option value="ask">Ask to Move to Inventory</option>
+                  <option value="always">Always Move to Inventory</option>
+                  <option value="never">Never Move</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsGrocerySettingsOpen(false);
+                  setIsPasteModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 text-xs font-extrabold border border-amber-300 transition cursor-pointer"
+              >
+                <ClipboardPaste className="w-3.5 h-3.5 text-amber-800" />
+                <span>Paste List from Notes</span>
+              </button>
+
+              <button
+                onClick={handleEmailToValleria}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-200 transition cursor-pointer"
+              >
+                <Mail className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Email List</span>
+              </button>
+
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => handleSelectViewMode('walking_path')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-extrabold flex items-center gap-1 transition cursor-pointer ${
+                    viewMode === 'walking_path'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Footprints className="w-3.5 h-3.5" />
+                  <span>Store Route</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectViewMode('standard_aisles')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-extrabold flex items-center gap-1 transition cursor-pointer ${
+                    viewMode === 'standard_aisles'
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  <span>Aisles</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {shareFeedback && (
+        <div className="p-3 rounded-2xl bg-emerald-600 text-white text-xs font-bold flex items-center justify-between shadow-sm">
+          <span>{shareFeedback}</span>
+        </div>
+      )}
+
+      {showSmsPreview && (
+        <section className="bg-slate-900 text-slate-100 rounded-3xl p-4 shadow-md space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+              Live Share / Email Payload for Family
             </span>
-            <select
-              value={checkoffMovePref}
-              onChange={(e) => {
-                const val = e.target.value as 'ask' | 'always' | 'never';
-                setCheckoffMovePref(val);
-                localStorage.setItem('freshdiy_checkoff_move_pref_v1', val);
+            <button
+              onClick={async () => {
+                await navigator.clipboard.writeText(smsText);
+                setShareFeedback('Copied formatted text payload!');
+                setTimeout(() => setShareFeedback(null), 3000);
               }}
-              className="bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 cursor-pointer"
-              title="When checking off an item in the store: ask, always move to inventory, or just check off"
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-300 cursor-pointer"
             >
-              <option value="ask">Ask to Move to Inventory</option>
-              <option value="always">Always Move to Inventory</option>
-              <option value="never">Never Move</option>
-            </select>
+              <Copy className="w-3.5 h-3.5" /> Copy Text
+            </button>
           </div>
+          <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed bg-slate-950/60 p-4 rounded-2xl border border-slate-800 max-h-80 overflow-y-auto">
+            {smsText}
+          </pre>
+        </section>
+      )}
 
-          {/* Paste List from Shared Note Button */}
+      {/* 2. GROCERY LIST & STORE ROUTE FIRST (Visible immediately at 375px without scrolling!) */}
+      {combinedAisles.length === 0 ? (
+        <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center space-y-3">
+          <ShoppingBag className="w-8 h-8 text-slate-300 mx-auto" />
+          <h3 className="text-sm font-bold text-slate-800">
+            No Items on Your List for {formatWeekRange(activeWeekStartDate)} Yet
+          </h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Schedule recipes in the Planner tab, or paste a shopping list from a shared note below.
+          </p>
           <button
             type="button"
             onClick={() => setIsPasteModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 text-xs font-extrabold border border-amber-300 transition cursor-pointer"
-            title="Copy & paste a shopping list from Apple Notes, Google Keep, or a text message"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer"
           >
-            <ClipboardPaste className="w-3.5 h-3.5 text-amber-800" />
-            📋 Paste List from Notes
-          </button>
-
-          {/* Free Email / Share Sheet Triggers */}
-          <button
-            onClick={handleEmailToValleria}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-200 transition cursor-pointer"
-            title="Send list via email for free"
-          >
-            <Mail className="w-3.5 h-3.5 text-emerald-600" />
-            Email List (Free)
-          </button>
-
-          <button
-            onClick={handleSendToValleria}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition cursor-pointer"
-          >
-            <Share2 className="w-4 h-4" />
-            Share with Family
+            <ClipboardPaste className="w-4 h-4" />
+            <span>Paste Shopping List from Notes</span>
           </button>
         </div>
-      </section>
-
-      {/* 🏪 STORE LAYOUT & ROUTE OPTIMIZATION BAR */}
-      <section className="bg-white rounded-3xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700">
-            <Store className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">
-                Active Store Layout
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
-                Roslindale, MA
+      ) : viewMode === 'walking_path' ? (
+        <div className="space-y-3.5">
+          {/* Compact 1-Line Store Route Progress Bar */}
+          <div className="px-3.5 py-2.5 rounded-2xl bg-slate-900 text-white flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <Store className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="font-black truncate">{selectedStore.shortName}</span>
+              <span className="text-slate-400 hidden sm:inline">•</span>
+              <span className="text-[11px] text-emerald-300 font-bold shrink-0">
+                {tripStats.collectedItems}/{tripStats.totalItems} items
               </span>
             </div>
-            <h3 className="text-sm font-black text-slate-900">
-              {selectedStore.name}
-            </h3>
-            <p className="text-[11px] text-slate-500">
-              {selectedStore.address} • Zero Backtracking Route
-            </p>
+            <button
+              type="button"
+              onClick={() =>
+                handleSelectViewMode(
+                  viewMode === 'walking_path' ? 'standard_aisles' : 'walking_path'
+                )
+              }
+              className="text-[11px] font-bold text-slate-300 hover:text-white underline shrink-0 cursor-pointer"
+            >
+              Switch to Aisles
+            </button>
+          </div>
+
+          {/* Sequential Department Walk Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-5">
+            {walkingSteps.map(
+              ({
+                dept,
+                recipeItems,
+                extraItems,
+                totalItems,
+                completedItems,
+                isFullyCompleted,
+              }) => (
+                <div
+                  key={dept.id}
+                  className={`rounded-2xl border p-3.5 sm:p-4 bg-white shadow-xs space-y-2.5 transition ${
+                    isFullyCompleted
+                      ? 'border-emerald-300/80 bg-emerald-50/15'
+                      : dept.id === 'aisle_1_natural'
+                      ? 'border-teal-300 ring-1 ring-teal-500/20'
+                      : 'border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-6 h-6 rounded-lg font-black text-xs flex items-center justify-center shrink-0 shadow-2xs ${
+                          isFullyCompleted
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-900 text-white'
+                        }`}
+                      >
+                        {dept.sortOrder}
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                            {dept.name}
+                          </h3>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                            {dept.locationLabel}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      {isFullyCompleted ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-600" /> Done
+                        </span>
+                      ) : (
+                        <span className="text-xs font-bold text-slate-400">
+                          {completedItems}/{totalItems}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {extraItems.map(renderExtraCard)}
+                    {recipeItems.map(renderRecipeCard)}
+                  </div>
+                </div>
+              )
+            )}
           </div>
         </div>
+      ) : (
+        /* Standard Aisles View */
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+          {combinedAisles.map(({ aisle, recipeItems, extraItems }) => (
+            <div
+              key={aisle}
+              className={`rounded-3xl border p-4 sm:p-5 bg-white shadow-xs space-y-3 ${
+                aisle === 'Dairy Alternatives'
+                  ? 'border-teal-300 ring-1 ring-teal-500/20'
+                  : 'border-slate-200'
+              }`}
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                    {aisle}
+                  </h3>
+                  {aisle === 'Dairy Alternatives' && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-teal-100 text-teal-800 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" /> Dairy-Free Routed
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs font-semibold text-slate-400">
+                  {recipeItems.length + extraItems.length} items
+                </span>
+              </div>
 
-        {/* View Mode Toggle: Walking Route vs Standard Aisles */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
-          <button
-            type="button"
-            onClick={() => handleSelectViewMode('walking_path')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
-              viewMode === 'walking_path'
-                ? 'bg-emerald-600 text-white shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Footprints className="w-3.5 h-3.5" />
-            🚶‍♂️ Store Walking Route
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSelectViewMode('standard_aisles')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
-              viewMode === 'standard_aisles'
-                ? 'bg-emerald-600 text-white shadow-2xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            📦 Standard Aisles
-          </button>
+              <div className="space-y-2">
+                {extraItems.map(renderExtraCard)}
+                {recipeItems.map(renderRecipeCard)}
+              </div>
+            </div>
+          ))}
         </div>
-      </section>
+      )}
 
-      {/* 2. FAMILY NUTRITION & COST SAVINGS RADAR */}
+      {/* 3. RECIPES IN THIS WEEK'S LIST + MANUAL FAMILY ITEMS */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Recipes in This Week's Grocery List */}
+        <section className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
+          <div>
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+              <Utensils className="w-4 h-4 text-emerald-600" />
+              Recipes for Week of {formatWeekRange(activeWeekStartDate)} ({currentWeekPlan.length})
+            </h3>
+            <p className="text-xs text-slate-500">
+              Add any recipe below to pull its ingredients into this dated shopping list.
+            </p>
+          </div>
+
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={recipeSearch}
+              onChange={(e) => setRecipeSearch(e.target.value)}
+              placeholder="Search 3,500+ recipes to add to this week's list..."
+              className="w-full pl-9 pr-4 py-2.5 rounded-2xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            {matchingRecipesForPicker.length > 0 && (
+              <div className="absolute z-20 left-0 right-0 mt-1 bg-white rounded-2xl border border-slate-200 shadow-xl divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                {matchingRecipesForPicker.map((rec) => (
+                  <div
+                    key={rec.id}
+                    className="p-2.5 flex items-center justify-between hover:bg-emerald-50/60 transition"
+                  >
+                    <div>
+                      <p className="text-xs font-bold text-slate-900">
+                        {rec.title}
+                      </p>
+                      <p className="text-[10px] text-slate-500">
+                        {rec.subtitle}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleQuickAddRecipeToGrocery(rec.id)}
+                      className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shrink-0"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            {currentWeekPlan.map((plan) => {
+              const rec = recipes.find((r) => r.id === plan.recipe_id);
+              if (!rec) return null;
+              return (
+                <div
+                  key={plan.id}
+                  className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2"
+                >
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-emerald-700">
+                      {plan.day_of_week}
+                    </span>
+                    <p className="text-xs font-bold text-slate-900">
+                      {rec.title}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-slate-500">
+                      Serves
+                    </span>
+                    {([2, 4, 6] as ServingsSize[]).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => onUpdatePlanServings(plan.id, s)}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-black cursor-pointer ${
+                          plan.servings === s
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-white border border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => onRemoveFromPlan(plan.id)}
+                      className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Manual Family Items for This Week */}
+        <section className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900">
+                Household Essentials &amp; Weekly Extras
+              </h3>
+              <p className="text-xs text-slate-500">
+                Add everyday items or paste a list from a shared note for {formatWeekRange(activeWeekStartDate)}.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsPasteModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-2xs transition cursor-pointer shrink-0"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5" />
+              <span>Paste Note List</span>
+            </button>
+          </div>
+
+          <form
+            onSubmit={handleAddExtraSubmit}
+            className="flex flex-wrap items-center gap-2"
+          >
+            <input
+              type="text"
+              value={newExtraQty}
+              onChange={(e) => setNewExtraQty(e.target.value)}
+              placeholder="Qty (e.g. 2 cartons)"
+              className="px-3 py-2 rounded-xl border border-slate-200 text-xs w-28"
+            />
+            <input
+              type="text"
+              value={newExtraName}
+              onChange={(e) => setNewExtraName(e.target.value)}
+              placeholder="Item name (e.g. Oat Milk, Apples, Snacks)..."
+              className="flex-1 min-w-[170px] px-3 py-2 rounded-xl border border-slate-200 text-xs"
+            />
+            <select
+              value={newExtraAisle}
+              onChange={(e) => setNewExtraAisle(e.target.value)}
+              className="px-2.5 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+            >
+              <option value="Household & Extras">Household &amp; Extras</option>
+              <option value="Produce">Produce</option>
+              <option value="Dairy Alternatives">Dairy Alternatives</option>
+              <option value="Dairy & Eggs">Dairy &amp; Eggs</option>
+              <option value="Meat & Seafood">Meat &amp; Seafood</option>
+              <option value="Grains & Bakery">Grains &amp; Bakery</option>
+              <option value="Spices & Pantry">Spices &amp; Pantry</option>
+            </select>
+            <label className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 px-2 py-1.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={newExtraRecurring}
+                onChange={(e) => setNewExtraRecurring(e.target.checked)}
+                className="rounded border-slate-300 text-emerald-600"
+              />
+              Weekly Staple
+            </label>
+            <button
+              type="submit"
+              className="px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold cursor-pointer"
+            >
+              + Add
+            </button>
+          </form>
+
+          {/* Quick Staples */}
+          <div>
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_FAMILY_STAPLES.map((st) => {
+                const alreadyAdded = currentWeekExtras.some(
+                  (e) => e.item_name.toLowerCase() === st.name.toLowerCase()
+                );
+                return (
+                  <button
+                    key={st.name}
+                    type="button"
+                    onClick={() => {
+                      if (!alreadyAdded) {
+                        onAddExtra(st.name, st.aisle);
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
+                      alreadyAdded
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {alreadyAdded ? '✓ ' : '+ '}
+                    {st.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* 4. FAMILY NUTRITION & COST SAVINGS RADAR */}
       {currentWeekPlan.length > 0 && (
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Cost Savings Estimator */}
@@ -1019,461 +1385,6 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
             </div>
           )}
         </section>
-      )}
-
-      {shareFeedback && (
-        <div className="p-3.5 rounded-2xl bg-emerald-600 text-white text-xs font-bold flex items-center justify-between shadow-sm">
-          <span>✅ {shareFeedback}</span>
-        </div>
-      )}
-
-      {showSmsPreview && (
-        <section className="bg-slate-900 text-slate-100 rounded-3xl p-5 shadow-md space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
-              📱 Live Share / Email Payload for Family
-            </span>
-            <button
-              onClick={async () => {
-                await navigator.clipboard.writeText(smsText);
-                setShareFeedback('Copied formatted text payload!');
-                setTimeout(() => setShareFeedback(null), 3000);
-              }}
-              className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-300 cursor-pointer"
-            >
-              <Copy className="w-3.5 h-3.5" /> Copy Text
-            </button>
-          </div>
-          <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed bg-slate-950/60 p-4 rounded-2xl border border-slate-800 max-h-80 overflow-y-auto">
-            {smsText}
-          </pre>
-        </section>
-      )}
-
-      {/* 3. RECIPES IN THIS WEEK'S LIST + MANUAL FAMILY ITEMS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Recipes in This Week's Grocery List */}
-        <section className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
-          <div>
-            <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-              <Utensils className="w-4 h-4 text-emerald-600" />
-              Recipes for Week of {formatWeekRange(activeWeekStartDate)} ({currentWeekPlan.length})
-            </h3>
-            <p className="text-xs text-slate-500">
-              Add any recipe below to pull its ingredients into this dated shopping list.
-            </p>
-          </div>
-
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={recipeSearch}
-              onChange={(e) => setRecipeSearch(e.target.value)}
-              placeholder="Search 3,500+ recipes to add to this week's list..."
-              className="w-full pl-9 pr-4 py-2.5 rounded-2xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-            {matchingRecipesForPicker.length > 0 && (
-              <div className="absolute z-20 left-0 right-0 mt-1 bg-white rounded-2xl border border-slate-200 shadow-xl divide-y divide-slate-100 max-h-60 overflow-y-auto">
-                {matchingRecipesForPicker.map((rec) => (
-                  <div
-                    key={rec.id}
-                    className="p-2.5 flex items-center justify-between hover:bg-emerald-50/60 transition"
-                  >
-                    <div>
-                      <p className="text-xs font-bold text-slate-900">
-                        {rec.title}
-                      </p>
-                      <p className="text-[10px] text-slate-500">
-                        {rec.subtitle}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleQuickAddRecipeToGrocery(rec.id)}
-                      className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer shrink-0"
-                    >
-                      + Add ({defaultServings}p)
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            {currentWeekPlan.map((plan) => {
-              const rec = recipes.find((r) => r.id === plan.recipe_id);
-              if (!rec) return null;
-              return (
-                <div
-                  key={plan.id}
-                  className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2"
-                >
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-emerald-700">
-                      {plan.day_of_week}
-                    </span>
-                    <p className="text-xs font-bold text-slate-900">
-                      {rec.title}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold text-slate-500">
-                      Serves
-                    </span>
-                    {([2, 4, 6] as ServingsSize[]).map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => onUpdatePlanServings(plan.id, s)}
-                        className={`px-2 py-0.5 rounded-lg text-[10px] font-black cursor-pointer ${
-                          plan.servings === s
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-white border border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => onRemoveFromPlan(plan.id)}
-                      className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Manual Family Items for This Week */}
-        <section className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-black text-slate-900">
-                Household Essentials &amp; Weekly Extras
-              </h3>
-              <p className="text-xs text-slate-500">
-                Add everyday items or paste a list from a shared note for {formatWeekRange(activeWeekStartDate)}.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsPasteModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-2xs transition cursor-pointer shrink-0"
-            >
-              <ClipboardPaste className="w-3.5 h-3.5" />
-              📋 Paste Note List
-            </button>
-          </div>
-
-          <form
-            onSubmit={handleAddExtraSubmit}
-            className="flex flex-wrap items-center gap-2"
-          >
-            <input
-              type="text"
-              value={newExtraQty}
-              onChange={(e) => setNewExtraQty(e.target.value)}
-              placeholder="Qty (e.g. 2 cartons)"
-              className="px-3 py-2 rounded-xl border border-slate-200 text-xs w-28"
-            />
-            <input
-              type="text"
-              value={newExtraName}
-              onChange={(e) => setNewExtraName(e.target.value)}
-              placeholder="Item name (e.g. Oat Milk, Apples, Snacks)..."
-              className="flex-1 min-w-[170px] px-3 py-2 rounded-xl border border-slate-200 text-xs"
-            />
-            <select
-              value={newExtraAisle}
-              onChange={(e) => setNewExtraAisle(e.target.value)}
-              className="px-2.5 py-2 rounded-xl border border-slate-200 text-xs bg-white"
-            >
-              <option value="Household & Extras">Household &amp; Extras</option>
-              <option value="Produce">Produce</option>
-              <option value="Dairy Alternatives">Dairy Alternatives</option>
-              <option value="Dairy & Eggs">Dairy &amp; Eggs</option>
-              <option value="Meat & Seafood">Meat &amp; Seafood</option>
-              <option value="Grains & Bakery">Grains &amp; Bakery</option>
-              <option value="Spices & Pantry">Spices &amp; Pantry</option>
-            </select>
-            <label className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 px-2 py-1.5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={newExtraRecurring}
-                onChange={(e) => setNewExtraRecurring(e.target.checked)}
-                className="rounded border-slate-300 text-emerald-600"
-              />
-              📌 Weekly Staple
-            </label>
-            <button
-              type="submit"
-              className="px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold cursor-pointer"
-            >
-              + Add
-            </button>
-          </form>
-
-          {/* Quick Staples */}
-          <div>
-            <div className="flex flex-wrap gap-1.5">
-              {QUICK_FAMILY_STAPLES.map((st) => {
-                const alreadyAdded = currentWeekExtras.some(
-                  (e) => e.item_name.toLowerCase() === st.name.toLowerCase()
-                );
-                return (
-                  <button
-                    key={st.name}
-                    type="button"
-                    onClick={() => {
-                      if (!alreadyAdded) {
-                        onAddExtra(st.name, st.aisle);
-                      }
-                    }}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
-                      alreadyAdded
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    {alreadyAdded ? '✓ ' : '+ '}
-                    {st.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {currentWeekExtras.length > 0 && (
-            <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-2">
-              {currentWeekExtras.map((ex) => (
-                <div
-                  key={ex.id}
-                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl border text-xs ${
-                    ex.checked
-                      ? 'bg-slate-100 border-slate-200 text-slate-400 line-through'
-                      : ex.is_recurring
-                      ? 'bg-amber-50/80 border-amber-300 text-slate-900 font-bold'
-                      : 'bg-emerald-50/70 border-emerald-200 text-slate-900 font-bold'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={ex.checked}
-                    onChange={() => handleCheckExtraItem(ex)}
-                    className="rounded border-slate-300 text-emerald-600"
-                  />
-                  <span>
-                    {ex.item_name}{' '}
-                    <span className="text-[10px] text-slate-500 font-normal">
-                      ({ex.aisle})
-                    </span>
-                  </span>
-                  {onToggleExtraRecurring && (
-                    <button
-                      type="button"
-                      onClick={() => onToggleExtraRecurring(ex.id)}
-                      className={`px-1.5 py-0.5 rounded-md text-[10px] font-extrabold transition cursor-pointer ${
-                        ex.is_recurring
-                          ? 'bg-amber-200 text-amber-950'
-                          : 'bg-white/80 text-slate-400 hover:text-amber-800'
-                      }`}
-                      title={
-                        ex.is_recurring
-                          ? 'Pinned as Weekly Staple (appears every week)'
-                          : 'Pin as recurring Weekly Staple'
-                      }
-                    >
-                      📌 {ex.is_recurring ? 'Staple' : 'Pin'}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => onDeleteExtra(ex.id)}
-                    className="text-slate-400 hover:text-rose-600 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      {/* 4. OPTIMIZED STORE WALKING PATH OR STANDARD AISLES */}
-      {combinedAisles.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
-          <ShoppingBag className="w-10 h-10 text-slate-300 mx-auto" />
-          <h3 className="text-base font-bold text-slate-800">
-            No Items on Your List for {formatWeekRange(activeWeekStartDate)} Yet
-          </h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Schedule recipes in the Planner tab, or click below to copy &amp; paste a shopping list from a shared note!
-          </p>
-          <button
-            type="button"
-            onClick={() => setIsPasteModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer"
-          >
-            <ClipboardPaste className="w-4 h-4" />
-            📋 Paste Shopping List from Notes
-          </button>
-        </div>
-      ) : viewMode === 'walking_path' ? (
-        <div className="space-y-5">
-          {/* Walking Path Progress Radar */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white shadow-sm space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-white/10 border border-white/15 text-emerald-300">
-                  <Footprints className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
-                      Stop &amp; Shop Optimized Route
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-400/20 text-emerald-300">
-                      Roslindale
-                    </span>
-                  </div>
-                  <h3 className="text-base font-black">
-                    {tripStats.completedDepts} of {tripStats.totalDepts} Departments Cleared • {tripStats.collectedItems} of {tripStats.totalItems} Items ({tripStats.percentage}%)
-                  </h3>
-                </div>
-              </div>
-              <div className="text-left sm:text-right">
-                <span className="text-xs font-bold text-emerald-200 block">
-                  🚶‍♂️ Entrance ➔ Center Aisles ➔ Back Meat Wall ➔ Frozen ➔ Dairy Last
-                </span>
-                <span className="text-[11px] text-slate-300">
-                  Cold items stay chilled right before checkout
-                </span>
-              </div>
-            </div>
-
-            <div className="w-full bg-white/15 h-2.5 rounded-full overflow-hidden p-0.5">
-              <div
-                className="bg-emerald-400 h-full rounded-full transition-all duration-300"
-                style={{ width: `${tripStats.percentage}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Sequential Department Walk Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-            {walkingSteps.map(
-              ({
-                dept,
-                recipeItems,
-                extraItems,
-                totalItems,
-                completedItems,
-                isFullyCompleted,
-              }) => (
-                <div
-                  key={dept.id}
-                  className={`rounded-3xl border p-4 sm:p-5 bg-white shadow-xs space-y-3 transition ${
-                    isFullyCompleted
-                      ? 'border-emerald-300/80 bg-emerald-50/15'
-                      : dept.id === 'aisle_1_natural'
-                      ? 'border-teal-300 ring-1 ring-teal-500/20'
-                      : 'border-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`w-7 h-7 rounded-xl font-black text-xs flex items-center justify-center shrink-0 shadow-2xs ${
-                          isFullyCompleted
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-slate-900 text-white'
-                        }`}
-                      >
-                        {dept.sortOrder}
-                      </div>
-                      <div>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
-                            {dept.name}
-                          </h3>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
-                            {dept.locationLabel}
-                          </span>
-                          {dept.id === 'dairy_eggs' && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-800">
-                              🧊 Grab Cold Last
-                            </span>
-                          )}
-                        </div>
-                        {dept.description && (
-                          <p className="text-[10px] text-slate-500">
-                            {dept.description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      {isFullyCompleted ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                          <Check className="w-3 h-3 text-emerald-600" /> Done
-                        </span>
-                      ) : (
-                        <span className="text-xs font-bold text-slate-400">
-                          {completedItems}/{totalItems}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {extraItems.map(renderExtraCard)}
-                    {recipeItems.map(renderRecipeCard)}
-                  </div>
-                </div>
-              )
-            )}
-          </div>
-        </div>
-      ) : (
-        /* Standard Aisles View */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-          {combinedAisles.map(({ aisle, recipeItems, extraItems }) => (
-            <div
-              key={aisle}
-              className={`rounded-3xl border p-4 sm:p-5 bg-white shadow-xs space-y-3 ${
-                aisle === 'Dairy Alternatives'
-                  ? 'border-teal-300 ring-1 ring-teal-500/20'
-                  : 'border-slate-200'
-              }`}
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
-                    {aisle}
-                  </h3>
-                  {aisle === 'Dairy Alternatives' && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-teal-100 text-teal-800 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" /> Dairy-Free Routed
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs font-semibold text-slate-400">
-                  {recipeItems.length + extraItems.length} items
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                {extraItems.map(renderExtraCard)}
-                {recipeItems.map(renderRecipeCard)}
-              </div>
-            </div>
-          ))}
-        </div>
       )}
 
       {/* 📋 PASTE SHOPPING LIST FROM SHARED NOTE MODAL */}
