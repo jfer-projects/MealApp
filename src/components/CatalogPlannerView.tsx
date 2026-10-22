@@ -49,6 +49,7 @@ interface CatalogPlannerViewProps {
   weeklyPlan: WeeklyPlanItem[];
   defaultServings: ServingsSize;
   isDairyFree: boolean;
+  onToggleDairyFree?: () => void;
   activeWeekStartDate: string;
   onNavigateWeek: (offset: number) => void;
   onHandFridgeItems: string[];
@@ -88,6 +89,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
   weeklyPlan,
   defaultServings,
   isDairyFree,
+  onToggleDairyFree,
   activeWeekStartDate,
   onNavigateWeek,
   onHandFridgeItems,
@@ -249,38 +251,38 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
     : undefined;
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* 1. MOBILE-FIRST WEEKLY MEAL PLANNER */}
-      <section className="bg-white rounded-3xl border border-slate-200 shadow-xs p-4 sm:p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-4 sm:space-y-5 pb-8">
+      {/* 1. COMPACT MOBILE-FIRST WEEKLY MEAL PLANNER */}
+      <section className="bg-white rounded-3xl border border-slate-200 shadow-xs p-3.5 sm:p-5 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center justify-between sm:justify-start gap-2">
+            <div className="flex items-center gap-2">
               <span className="p-1.5 rounded-xl bg-emerald-100 text-emerald-700">
                 <Calendar className="w-4 h-4" />
               </span>
-              <h2 className="text-base sm:text-lg font-black text-slate-900">
-                Family Meal Plan
+              <h2 className="text-sm sm:text-base font-black text-slate-900">
+                Meal Plan
               </h2>
-              <span className="px-2.5 py-0.5 text-xs font-extrabold rounded-full bg-emerald-100 text-emerald-800">
-                {plannedCount}/7 Days
+              <span className="px-2 py-0.5 text-[11px] font-extrabold rounded-full bg-emerald-100 text-emerald-800">
+                {plannedCount}/7
               </span>
             </div>
 
-            {/* Week Switcher in Planner */}
-            <div className="flex items-center gap-2 mt-1">
+            {/* Compact Week Switcher */}
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-xl px-1.5 py-0.5">
               <button
                 onClick={() => onNavigateWeek(-1)}
-                className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                className="p-1 rounded-lg hover:bg-slate-200 text-slate-600 cursor-pointer"
                 title="Previous Week"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
-              <span className="text-xs font-bold text-slate-700">
-                Week of {formatWeekRange(activeWeekStartDate)}
+              <span className="text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                {formatWeekRange(activeWeekStartDate)}
               </span>
               <button
                 onClick={() => onNavigateWeek(1)}
-                className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                className="p-1 rounded-lg hover:bg-slate-200 text-slate-600 cursor-pointer"
                 title="Next Week"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -288,67 +290,72 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* 1-Tap Auto-Planner ("Fill My Week") */}
-            {onFillMyWeek && (
-              <button
-                onClick={onFillMyWeek}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-xs transition cursor-pointer"
-                title="Auto-fill open days with varied dinners matching your Freezer, Fridge & Pantry"
-              >
-                <Wand2 className="w-3.5 h-3.5" />
-                ✨ Fill My Week
-              </button>
-            )}
-
-            {/* Macro Goals & AI Assistant */}
-            {onOpenMacroPlanner && (
-              <button
-                onClick={onOpenMacroPlanner}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs shadow-xs transition cursor-pointer"
-                title="Set target protein/calories and generate meals using your house inventory"
-              >
-                <Target className="w-3.5 h-3.5" />
-                🎯 Macro AI
-              </button>
-            )}
-
-            {/* Global Serving Size Selector */}
-            <div className="flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200">
-              <span className="text-[11px] font-bold text-slate-600 px-2 flex items-center gap-1">
-                <Users className="w-3.5 h-3.5" />
-              </span>
-              {([2, 4, 6] as ServingsSize[]).map((size) => (
+          <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5">
+            <div className="flex items-center gap-1.5">
+              {/* 1-Tap Auto-Planner ("Auto-Fill Week") */}
+              {onFillMyWeek && (
                 <button
-                  key={size}
-                  onClick={() => onSetDefaultServings(size)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer ${
-                    defaultServings === size
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  onClick={onFillMyWeek}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-xs transition cursor-pointer"
+                  title="Auto-fill open days with varied dinners matching your Freezer, Fridge & Pantry"
                 >
-                  {size}p
+                  <Wand2 className="w-3.5 h-3.5" />
+                  <span>Auto-Fill Week</span>
                 </button>
-              ))}
+              )}
+
+              {/* Macro Goals & AI Assistant */}
+              {onOpenMacroPlanner && (
+                <button
+                  onClick={onOpenMacroPlanner}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs shadow-xs transition cursor-pointer"
+                  title="Set target protein/calories and generate meals using your house inventory"
+                >
+                  <Target className="w-3.5 h-3.5" />
+                  <span>Macro AI</span>
+                </button>
+              )}
             </div>
 
-            {plannedCount > 0 && (
-              <button
-                onClick={onCompleteWeeklyPlan}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-xs transition cursor-pointer"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {completedCount === plannedCount && plannedCount > 0
-                  ? 'Week Done'
-                  : 'Complete Week'}
-              </button>
-            )}
+            <div className="flex items-center gap-1.5">
+              {/* Global Serving Size Selector */}
+              <div className="flex items-center bg-slate-100 rounded-xl p-0.5 border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-500 pl-2 pr-1 hidden sm:inline">
+                  Servings:
+                </span>
+                {([2, 4, 6] as ServingsSize[]).map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => onSetDefaultServings(size)}
+                    className={`px-2 py-1 rounded-lg text-[11px] font-extrabold transition cursor-pointer ${
+                      defaultServings === size
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title={`${size} Servings`}
+                  >
+                    {size}p
+                  </button>
+                ))}
+              </div>
+
+              {plannedCount > 0 && (
+                <button
+                  onClick={onCompleteWeeklyPlan}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-xs transition cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">
+                    {completedCount === plannedCount ? 'Week Done' : 'Complete Week'}
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Horizontal Swipeable Day Strip (Thumb-Optimized for Mobile) */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+        {/* 7-Day Grid (Fits all 7 days on mobile screen at once!) */}
+        <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {DAYS_OF_WEEK.map((day) => {
             const pItem = currentWeekPlan.find((p) => p.day_of_week === day);
             const isSelected = selectedDayForAdd === day;
@@ -356,35 +363,35 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
               <button
                 key={day}
                 onClick={() => setSelectedDayForAdd(day)}
-                className={`flex-1 min-w-[72px] py-2.5 px-3 rounded-2xl border text-center transition cursor-pointer shrink-0 ${
+                className={`py-2 px-1 rounded-2xl border text-center transition cursor-pointer ${
                   isSelected
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                     : pItem
-                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
-                    : 'bg-slate-50 border-slate-200 text-slate-600'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                    : 'bg-slate-50 border-slate-200/80 text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                <div className="text-[11px] font-extrabold uppercase tracking-wider">
+                <div className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-tight">
                   {day.slice(0, 3)}
                 </div>
-                <div className="mt-1 flex items-center justify-center gap-1">
+                <div className="mt-0.5 flex items-center justify-center">
                   {pItem ? (
                     <span
-                      className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                      className={`text-[9px] sm:text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
                         isSelected
                           ? 'bg-emerald-400 text-slate-950'
                           : 'bg-emerald-200 text-emerald-900'
                       }`}
                     >
-                      {pItem.servings}p ✓
+                      ✓
                     </span>
                   ) : (
                     <span
-                      className={`text-[10px] ${
+                      className={`text-[9px] sm:text-[10px] font-medium ${
                         isSelected ? 'text-slate-300' : 'text-slate-400'
                       }`}
                     >
-                      Open
+                      +
                     </span>
                   )}
                 </div>
@@ -393,146 +400,135 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
           })}
         </div>
 
-        {/* Active Selected Day Card (Mobile + Desktop Focus) */}
-        <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {activeDayPlan && activeDayRecipe ? (
-            <>
-              <div className="flex items-center gap-3">
-                <img
-                  src={activeDayRecipe.image_url}
-                  alt={activeDayRecipe.title}
-                  className="w-16 h-16 rounded-2xl object-cover shrink-0 border border-slate-200"
-                />
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-black uppercase tracking-wider text-emerald-700">
-                      {selectedDayForAdd}&apos;s Dinner
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      • {activeDayRecipe.prep_time} mins
-                    </span>
-                  </div>
-                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 leading-snug">
-                    {activeDayRecipe.title}
-                  </h3>
-                  <p className="text-xs text-slate-500 line-clamp-1">
-                    {activeDayRecipe.subtitle}
-                  </p>
+        {/* Active Selected Day Card (Full card when planned, slim 1-line bar when open) */}
+        {activeDayPlan && activeDayRecipe ? (
+          <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-3">
+              <img
+                src={activeDayRecipe.image_url}
+                alt={activeDayRecipe.title}
+                className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover shrink-0 border border-slate-200"
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">
+                    {selectedDayForAdd}&apos;s Dinner
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    • {activeDayRecipe.prep_time}m
+                  </span>
                 </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200/80">
-                {onMovePlanDay && (
-                  <select
-                    value={activeDayPlan.day_of_week}
-                    onChange={(e) => {
-                      const nextDay = e.target.value as DayOfWeek;
-                      onMovePlanDay(activeDayPlan.id, nextDay);
-                      setSelectedDayForAdd(nextDay);
-                    }}
-                    className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 cursor-pointer"
-                    title="Move meal to another day of the week"
-                  >
-                    {DAYS_OF_WEEK.map((d) => (
-                      <option key={d} value={d}>
-                        Move: {d.slice(0, 3)}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
-                  {([2, 4, 6] as ServingsSize[]).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => onUpdatePlanServings(activeDayPlan.id, s)}
-                      className={`px-2.5 py-1 text-xs font-extrabold rounded-lg cursor-pointer ${
-                        activeDayPlan.servings === s
-                          ? 'bg-emerald-600 text-white'
-                          : 'text-slate-600'
-                      }`}
-                    >
-                      {s}p
-                    </button>
-                  ))}
-                </div>
-
-                <button
-                  onClick={() =>
-                    onOpenCookingView(activeDayRecipe, activeDayPlan.servings)
-                  }
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs cursor-pointer"
-                >
-                  <ChefHat className="w-4 h-4" /> Start Cooking
-                </button>
-
-                <button
-                  onClick={() => onRemoveFromPlan(activeDayPlan.id)}
-                  className="p-2 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-rose-600 cursor-pointer"
-                  title="Remove meal"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center justify-between w-full py-1">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xs">
-                  {selectedDayForAdd.slice(0, 3)}
-                </div>
-                <div>
-                  <p className="text-xs sm:text-sm font-bold text-slate-900">
-                    No meal planned for {selectedDayForAdd} yet
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    Tap &ldquo;+ Add to {selectedDayForAdd.slice(0, 3)}&rdquo; on any recipe or smart suggestion below!
-                  </p>
-                </div>
+                <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
+                  {activeDayRecipe.title}
+                </h3>
+                <p className="text-[11px] text-slate-500 truncate">
+                  {activeDayRecipe.subtitle}
+                </p>
               </div>
             </div>
-          )}
-        </div>
+
+            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200/80">
+              {onMovePlanDay && (
+                <select
+                  value={activeDayPlan.day_of_week}
+                  onChange={(e) => {
+                    const nextDay = e.target.value as DayOfWeek;
+                    onMovePlanDay(activeDayPlan.id, nextDay);
+                    setSelectedDayForAdd(nextDay);
+                  }}
+                  className="px-2 py-1 rounded-xl bg-white border border-slate-200 text-[11px] font-bold text-slate-700 cursor-pointer"
+                  title="Move meal to another day of the week"
+                >
+                  {DAYS_OF_WEEK.map((d) => (
+                    <option key={d} value={d}>
+                      Move: {d.slice(0, 3)}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-200">
+                {([2, 4, 6] as ServingsSize[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => onUpdatePlanServings(activeDayPlan.id, s)}
+                    className={`px-2 py-1 text-[11px] font-extrabold rounded-lg cursor-pointer ${
+                      activeDayPlan.servings === s
+                        ? 'bg-emerald-600 text-white'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    {s}p
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() =>
+                  onOpenCookingView(activeDayRecipe, activeDayPlan.servings)
+                }
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs cursor-pointer"
+              >
+                <ChefHat className="w-3.5 h-3.5" /> Cook
+              </button>
+
+              <button
+                onClick={() => onRemoveFromPlan(activeDayPlan.id)}
+                className="p-1.5 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-rose-600 cursor-pointer"
+                title="Remove meal"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-slate-50 border border-slate-200/80 px-3 py-2 flex items-center justify-between text-xs text-slate-600">
+            <span>
+              <strong className="text-slate-800">{selectedDayForAdd} is open</strong> — tap{' '}
+              <span className="font-bold text-emerald-700">&ldquo;+ Add to {selectedDayForAdd.slice(0, 3)}&rdquo;</span> on any recipe below
+            </span>
+          </div>
+        )}
       </section>
 
-      {/* 2. REDESIGNED SMART RECIPE SUGGESTOR ("COOK WITH WHAT WE HAVE") */}
-      <section className="bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 text-white rounded-3xl p-4 sm:p-6 shadow-md space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="p-2.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 shrink-0">
-              <Refrigerator className="w-5 h-5" />
+      {/* 2. COMPACT KITCHEN MATCHER ("COOK WITH WHAT YOU HAVE") */}
+      <section className="bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 text-white rounded-3xl p-3.5 sm:p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 rounded-xl bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 shrink-0">
+              <Refrigerator className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black tracking-tight">
-                  Smart Recipe Recommendations
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-black tracking-tight truncate">
+                  Cook With What You Have
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                  {onHandFridgeItems.length} Fridge + {inStockCabinetCount} Spices
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                  {onHandFridgeItems.length} Fridge + {inStockCabinetCount} Pantry
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Matches your on-hand fridge ingredients + Spice Cabinet to suggest tonight&apos;s best dinner.
+              <p className="text-[11px] text-slate-300 truncate">
+                Matching {onHandFridgeItems.length} fridge items &amp; {inStockCabinetCount} spices
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={() => onOpenPhotoScanner('fridge')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-xs font-black shadow-xs transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-xs font-extrabold shadow-xs transition cursor-pointer"
+              title="Take a photo of your fridge to auto-detect ingredients"
             >
-              <Camera className="w-4 h-4" />
-              📸 Snap Fridge Photo
+              <Camera className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Scan Fridge</span>
+              <span className="sm:hidden">Scan</span>
             </button>
 
             <button
               onClick={() => setShowMatcherPanel(!showMatcherPanel)}
-              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 transition cursor-pointer"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 transition cursor-pointer"
             >
-              {showMatcherPanel
-                ? 'Hide Fridge Checklist'
-                : `Edit Fridge Items (${onHandFridgeItems.length})`}
+              {showMatcherPanel ? 'Done' : `Fridge (${onHandFridgeItems.length})`}
             </button>
           </div>
         </div>
@@ -722,6 +718,21 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            {onToggleDairyFree && (
+              <button
+                type="button"
+                onClick={onToggleDairyFree}
+                className={`px-3 py-2 rounded-2xl text-xs font-extrabold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 border ${
+                  isDairyFree
+                    ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+                title="Automatically substitutes butter, milk, sour cream, and cheese with plant-based alternatives"
+              >
+                <span>🌱 Dairy-Free: {isDairyFree ? 'ON' : 'OFF'}</span>
+              </button>
+            )}
+
             {FILTER_TAGS.map((tag) => {
               const active = activeTag === tag;
               return (
@@ -810,7 +821,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                       </span>
                       {hasDairySub && isDairyFree && (
                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-600 text-white shadow-xs">
-                          🌱 DF
+                          🌱 Dairy-Free
                         </span>
                       )}
                       {matchInfo && matchInfo.matchPercentage > 0 && (

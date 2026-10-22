@@ -1531,14 +1531,14 @@ export const App: React.FC = () => {
           {/* Brand Logo */}
           <div
             onClick={() => setActiveTab('catalog')}
-            className="flex items-center gap-2.5 cursor-pointer"
+            className="flex items-center gap-2 sm:gap-2.5 cursor-pointer min-w-0"
           >
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
-              <ChefHat className="w-5 h-5 sm:w-6 sm:h-6" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+              <ChefHat className="w-4 h-4 sm:w-6 sm:h-6" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900">
+                <span className="text-base sm:text-xl font-black tracking-tight text-slate-900">
                   Fresh<span className="text-emerald-600">DIY</span>
                 </span>
                 <button
@@ -1556,8 +1556,11 @@ export const App: React.FC = () => {
                   <span>{currentUser.display_name}</span>
                 </button>
               </div>
-              <p className="text-[10px] sm:text-xs text-slate-500 line-clamp-1">
-                {recipes.filter((r) => r.is_latest).length.toLocaleString()} HelloFresh Recipes • Dairy-Free • AI Kitchen
+              <p className="text-[10px] sm:text-xs text-slate-500 truncate">
+                <span className="sm:hidden">{currentUser.household?.name || 'Family Kitchen'}</span>
+                <span className="hidden sm:inline">
+                  {recipes.filter((r) => r.is_latest).length.toLocaleString()} HelloFresh Recipes • {isDairyFree ? 'Dairy-Free' : 'All Diets'} • AI Kitchen
+                </span>
               </p>
             </div>
           </div>
@@ -1618,8 +1621,8 @@ export const App: React.FC = () => {
             </button>
           </nav>
 
-          {/* Right Quick Actions (Mobile + Desktop) */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Right Quick Actions (Clean 2-button mobile layout, Full on Desktop) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               onClick={() =>
                 setPhotoScannerState({
@@ -1627,39 +1630,26 @@ export const App: React.FC = () => {
                   mode: activeTab === 'cabinet' ? 'cabinet' : 'fridge',
                 })
               }
-              className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
+              className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
               title="Take a photo of your spice cabinet, fridge, or deep freezer to auto-import"
             >
               <Camera className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Scan</span>
+              <span>Scan Photo</span>
             </button>
 
             <button
               onClick={() => setIsMacroModalOpen(true)}
-              className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs transition cursor-pointer"
               title="Set macro targets & let Gemini suggest meals from what's in your house"
             >
-              <Target className="w-3.5 h-3.5 text-white" />
-              <span>Macro</span>
-            </button>
-
-            <button
-              onClick={() => setIsDairyFree(!isDairyFree)}
-              className={`inline-flex items-center gap-1 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-extrabold border transition cursor-pointer ${
-                isDairyFree
-                  ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
-                  : 'bg-white text-slate-700 border-slate-200'
-              }`}
-              title="Toggles Dynamic Dairy Substitution Engine"
-            >
-              <Leaf className="w-3.5 h-3.5" />
-              <span>DF: {isDairyFree ? 'ON' : 'OFF'}</span>
+              <Target className="w-3.5 h-3.5 text-white shrink-0" />
+              <span>Macro AI</span>
             </button>
 
             <button
               onClick={handleSyncSupabase}
               disabled={isSyncing}
-              className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              className={`hidden lg:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${
                 supaStatus.tablesReady
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                   : 'bg-amber-50 border-amber-200 text-amber-900'
@@ -1676,11 +1666,11 @@ export const App: React.FC = () => {
             {/* Family & Account Settings Button */}
             <button
               onClick={() => setIsFamilyModalOpen(true)}
-              className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 transition cursor-pointer"
-              title="Family Settings & Share Invite Link"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 transition cursor-pointer"
+              title="Family Settings, Dietary Preferences & Household Invite Link"
             >
-              <Users className="w-3.5 h-3.5 text-emerald-700" />
-              <span className="hidden sm:inline">Family</span>
+              <Users className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <span>Family</span>
             </button>
           </div>
         </div>
@@ -1710,6 +1700,7 @@ export const App: React.FC = () => {
             weeklyPlan={weeklyPlan}
             defaultServings={defaultServings}
             isDairyFree={isDairyFree}
+            onToggleDairyFree={() => setIsDairyFree(!isDairyFree)}
             activeWeekStartDate={activeWeekStartDate}
             onNavigateWeek={handleNavigateWeek}
             onHandFridgeItems={effectiveOnHandFridgeItems}
@@ -2163,6 +2154,8 @@ export const App: React.FC = () => {
         isOpen={isFamilyModalOpen}
         onClose={() => setIsFamilyModalOpen(false)}
         currentUser={currentUser}
+        isDairyFree={isDairyFree}
+        onToggleDairyFree={setIsDairyFree}
         geminiApiKey={geminiApiKey}
         isKeyAuthor={isKeyAuthor}
         onUpdateGeminiApiKey={(k) => {

@@ -34,6 +34,8 @@ interface FamilySettingsModalProps {
   geminiApiKey: string;
   isKeyAuthor?: boolean;
   onUpdateGeminiApiKey: (key: string) => void;
+  isDairyFree?: boolean;
+  onToggleDairyFree?: (val: boolean) => void;
   hellofreshPrice: number;
   onUpdateHellofreshPrice: (price: number) => void;
   onProfileUpdated: (updated: UserProfile) => void;
@@ -47,6 +49,8 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
   geminiApiKey,
   isKeyAuthor = true,
   onUpdateGeminiApiKey,
+  isDairyFree = true,
+  onToggleDairyFree,
   hellofreshPrice,
   onUpdateHellofreshPrice,
   onProfileUpdated,
@@ -322,6 +326,30 @@ export const FamilySettingsModal: React.FC<FamilySettingsModalProps> = ({
                   <p className="text-[10px] text-slate-500 mt-1">
                     Powers photo scanning &amp; recipe AI customization. Private to your household only — never shared with outside accounts.
                   </p>
+                </div>
+              )}
+
+              {onToggleDairyFree && (
+                <div className="p-3 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-extrabold text-slate-900">
+                      🌱 Dairy-Free Substitutions
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                      Automatically swaps butter, milk, sour cream &amp; cheese with plant-based alternatives in recipes and grocery lists.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onToggleDairyFree(!isDairyFree)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition shrink-0 cursor-pointer ${
+                      isDairyFree
+                        ? 'bg-teal-600 text-white shadow-xs'
+                        : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                    }`}
+                  >
+                    {isDairyFree ? 'ON' : 'OFF'}
+                  </button>
                 </div>
               )}
 
