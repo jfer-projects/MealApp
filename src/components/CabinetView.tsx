@@ -365,7 +365,7 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-base font-black text-slate-900">
-                    Ingredients You Have Run Out Of / Running Low
+                    Running low
                   </h3>
                   {outItems.length > 0 && (
                     <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-600 text-white">
@@ -427,13 +427,13 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
                   }`}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-start gap-1.5">
                       <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${
+                        className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
                           isOut ? 'bg-rose-600' : 'bg-amber-500'
                         }`}
                       />
-                      <span className="text-sm font-black text-slate-900 truncate">
+                      <span className="text-sm font-black text-slate-900 line-clamp-2 leading-snug">
                         {item.item_name}
                       </span>
                     </div>
@@ -442,7 +442,7 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
                         isOut ? 'text-rose-700' : 'text-amber-800'
                       }`}
                     >
-                      {isOut ? '🚨 RAN OUT' : '⚠️ RUNNING LOW'} • {item.category}
+                      {isOut ? 'RAN OUT' : 'RUNNING LOW'} • {item.category}
                     </span>
                   </div>
 
@@ -658,7 +658,7 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
             onClick={() => handleOpenAddModal()}
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition cursor-pointer shrink-0"
           >
-            <Plus className="w-4 h-4" /> + Add Item
+            <Plus className="w-4 h-4" /> Add Item
           </button>
         </div>
 
@@ -674,7 +674,7 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
               onClick={() => handleOpenAddModal()}
               className="mt-3.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
             >
-              <Plus className="w-4 h-4" /> + Add Item to Inventory
+              <Plus className="w-4 h-4" /> Add Item to Inventory
             </button>
           </div>
         ) : (
@@ -710,7 +710,7 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <p className="text-sm font-extrabold text-slate-900 truncate">
+                        <p className="text-sm font-extrabold text-slate-900 line-clamp-2 leading-snug">
                           {item.item_name}
                         </p>
                         {showLocationBreakdown && (

@@ -13,6 +13,7 @@ import {
   Users,
 } from 'lucide-react';
 import { signIn, signUpWithHousehold } from '../lib/authService';
+import { supabase } from '../lib/supabase';
 import { UserProfile } from '../types/freshdiy';
 
 interface AuthScreenProps {
@@ -167,7 +168,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Join / Create Account
+              Create account
             </button>
           </div>
 
@@ -205,9 +206,35 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Password
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-300">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setErrorMessage(null);
+                      setSuccessMessage(null);
+                      if (!email.trim()) {
+                        setErrorMessage('Enter your email address above first, then tap "Forgot password?".');
+                        return;
+                      }
+                      setLoading(true);
+                      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+                        redirectTo: window.location.origin,
+                      });
+                      setLoading(false);
+                      if (error) {
+                        setErrorMessage(error.message || 'Could not send reset email. Please try again.');
+                      } else {
+                        setSuccessMessage(`Password reset link sent to ${email.trim()}!`);
+                      }
+                    }}
+                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
@@ -233,7 +260,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 disabled={loading}
                 className="w-full mt-2 py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-extrabold text-sm shadow-lg shadow-emerald-950/40 transition cursor-pointer disabled:opacity-50"
               >
-                {loading ? 'Signing In...' : 'Sign In to Family Kitchen'}
+                {loading ? 'Signing in...' : 'Sign in'}
               </button>
             </form>
           ) : (
