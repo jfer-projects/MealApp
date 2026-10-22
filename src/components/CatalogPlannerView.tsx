@@ -866,7 +866,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
 
         {/* Recipe Cards Grid (Compact Mobile-First Layout: 2+ cards per screen at 375px) */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-          {visibleRecipes.slice(0, visibleLimit).map((recipe) => {
+          {visibleRecipes.slice(0, visibleLimit).map((recipe, cardIdx) => {
             const matchInfo = matchMap.get(recipe.id);
             const rEntry =
               ratingsMap[recipe.original_id || recipe.id] || ratingsMap[recipe.id];
@@ -875,15 +875,18 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
               <div
                 key={recipe.id}
                 onClick={() => onOpenCookingView(recipe, defaultServings)}
-                className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between cursor-pointer group"
+                className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md flex flex-col justify-between cursor-pointer group"
               >
                 <div>
-                  <div className="relative aspect-[16/10] bg-slate-200 overflow-hidden">
+                  <div className="relative aspect-[16/10] bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 overflow-hidden">
                     <img
                       src={recipe.image_url}
                       alt={recipe.title}
-                      className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-200"
-                      loading="lazy"
+                      width={400}
+                      height={250}
+                      decoding="async"
+                      loading={cardIdx < 8 ? 'eager' : 'lazy'}
+                      className="w-full h-full object-cover"
                     />
                     <div className="absolute top-2 left-2 flex flex-wrap gap-1">
                       {recipe.version > 1 && (
