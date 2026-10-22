@@ -1621,22 +1621,8 @@ export const App: React.FC = () => {
             </button>
           </nav>
 
-          {/* Right Quick Actions (Clean 2-button mobile layout, Full on Desktop) */}
+          {/* Right Quick Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button
-              onClick={() =>
-                setPhotoScannerState({
-                  open: true,
-                  mode: activeTab === 'cabinet' ? 'cabinet' : 'fridge',
-                })
-              }
-              className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
-              title="Take a photo of your spice cabinet, fridge, or deep freezer to auto-import"
-            >
-              <Camera className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Scan Photo</span>
-            </button>
-
             <button
               onClick={() => setIsMacroModalOpen(true)}
               className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs transition cursor-pointer"

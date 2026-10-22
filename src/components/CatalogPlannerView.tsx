@@ -515,16 +515,6 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
 
           <div className="flex items-center gap-1.5 shrink-0">
             <button
-              onClick={() => onOpenPhotoScanner('fridge')}
-              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-xs font-extrabold shadow-xs transition cursor-pointer"
-              title="Take a photo of your fridge to auto-detect ingredients"
-            >
-              <Camera className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Scan Fridge</span>
-              <span className="sm:hidden">Scan</span>
-            </button>
-
-            <button
               onClick={() => setShowMatcherPanel(!showMatcherPanel)}
               className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 transition cursor-pointer"
             >

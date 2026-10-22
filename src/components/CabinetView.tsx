@@ -349,22 +349,7 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-100 text-slate-900 font-extrabold text-xs shadow-md transition cursor-pointer"
           >
             <Plus className="w-4 h-4 text-emerald-600" />
-            + Add Item
-          </button>
-          <button
-            onClick={() => onOpenPhotoScanner('freezer')}
-            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md transition cursor-pointer"
-            title="Scan Deep Freezer contents"
-          >
-            <Snowflake className="w-4 h-4" />
-            Scan Freezer
-          </button>
-          <button
-            onClick={() => onOpenPhotoScanner('cabinet')}
-            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg transition cursor-pointer shrink-0 active:scale-98"
-          >
-            <Camera className="w-4 h-4" />
-            Scan Pantry/Spices
+            <span>Add Item</span>
           </button>
         </div>
       </section>
