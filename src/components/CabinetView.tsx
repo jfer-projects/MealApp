@@ -938,7 +938,7 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
                     ? 'border-emerald-200'
                     : evalResult.overallStatus === 'low_stock'
                     ? 'border-amber-200'
-                    : 'border-rose-200'
+                    : 'border-slate-200'
                 }`}
               >
                 <div>
@@ -948,7 +948,7 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
                     </h4>
                     {evalResult.overallStatus === 'ready' && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                        <CheckCircle2 className="w-3 h-3" /> Ready
+                        <CheckCircle2 className="w-3 h-3" /> Ready to Mix
                       </span>
                     )}
                     {evalResult.overallStatus === 'low_stock' && (
@@ -957,8 +957,8 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
                       </span>
                     )}
                     {evalResult.overallStatus === 'missing_items' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800">
-                        <XCircle className="w-3 h-3" /> Missing Item
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700">
+                        <Beaker className="w-3 h-3" /> Make it yourself
                       </span>
                     )}
                   </div>
