@@ -711,6 +711,8 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
             {onToggleDairyFree && (
               <button
                 type="button"
+                role="switch"
+                aria-checked={isDairyFree}
                 onClick={onToggleDairyFree}
                 className={`px-3 py-2 rounded-2xl text-xs font-extrabold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 border ${
                   isDairyFree
@@ -719,7 +721,14 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                 }`}
                 title="Automatically substitutes butter, milk, sour cream, and cheese with plant-based alternatives"
               >
-                <span>🌱 Dairy-Free: {isDairyFree ? 'ON' : 'OFF'}</span>
+                <span>🌱 Dairy-free</span>
+                <span
+                  className={`w-6 h-3.5 rounded-full p-0.5 flex items-center transition-colors ${
+                    isDairyFree ? 'bg-teal-800 justify-end' : 'bg-slate-300 justify-start'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full bg-white" />
+                </span>
               </button>
             )}
 

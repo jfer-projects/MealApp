@@ -1556,11 +1556,8 @@ export const App: React.FC = () => {
                   <span>{currentUser.display_name}</span>
                 </button>
               </div>
-              <p className="text-[10px] sm:text-xs text-slate-500 truncate">
-                <span className="sm:hidden">{currentUser.household?.name || 'Family Kitchen'}</span>
-                <span className="hidden sm:inline">
-                  {recipes.filter((r) => r.is_latest).length.toLocaleString()} HelloFresh Recipes • {isDairyFree ? 'Dairy-Free' : 'All Diets'} • AI Kitchen
-                </span>
+              <p className="hidden sm:block text-xs text-slate-500 truncate">
+                {recipes.filter((r) => r.is_latest).length.toLocaleString()} HelloFresh Recipes • {isDairyFree ? 'Dairy-Free' : 'All Diets'} • AI Kitchen
               </p>
             </div>
           </div>
@@ -1621,15 +1618,42 @@ export const App: React.FC = () => {
             </button>
           </nav>
 
-          {/* Right Quick Actions */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Right Quick Actions (Fits cleanly at 375px) */}
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Dairy-Free On/Off Switch */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isDairyFree}
+              aria-label="Dairy-free mode"
+              onClick={() => setIsDairyFree(!isDairyFree)}
+              className={`inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-extrabold border transition cursor-pointer ${
+                isDairyFree
+                  ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}
+              title="Toggle automatic dairy-free ingredient and recipe substitutions"
+            >
+              <Leaf className="w-3.5 h-3.5 shrink-0" />
+              <span>Dairy-free</span>
+              <span
+                className={`w-6 h-3.5 rounded-full p-0.5 flex items-center transition-colors ${
+                  isDairyFree ? 'bg-teal-800 justify-end' : 'bg-slate-300 justify-start'
+                }`}
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-white shadow-2xs" />
+              </span>
+            </button>
+
             <button
               onClick={() => setIsMacroModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs transition cursor-pointer"
+              aria-label="Macro AI meal planner"
+              className="inline-flex items-center gap-1 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-extrabold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-xs transition cursor-pointer"
               title="Set macro targets & let Gemini suggest meals from what's in your house"
             >
               <Target className="w-3.5 h-3.5 text-white shrink-0" />
-              <span>Macro AI</span>
+              <span className="hidden sm:inline">Macro AI</span>
+              <span className="sm:hidden">Macro</span>
             </button>
 
             <button
@@ -1652,7 +1676,8 @@ export const App: React.FC = () => {
             {/* Family & Account Settings Button */}
             <button
               onClick={() => setIsFamilyModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-extrabold bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 transition cursor-pointer"
+              aria-label="Family settings"
+              className="inline-flex items-center gap-1 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-extrabold bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 transition cursor-pointer"
               title="Family Settings, Dietary Preferences & Household Invite Link"
             >
               <Users className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
