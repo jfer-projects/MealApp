@@ -258,6 +258,29 @@ export function findBlendDefinition(
   return null;
 }
 
+function normalizeSpiceName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\b(?:ground|dried|all-purpose|white|black|smoked|korean)\s+/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function findCabinetSpiceMatch(
+  spiceName: string,
+  cabinet: CabinetItem[]
+): CabinetItem | undefined {
+  const exactLower = spiceName.toLowerCase().trim();
+  const exact = cabinet.find((c) => c.item_name.toLowerCase().trim() === exactLower);
+  if (exact) return exact;
+
+  const normTarget = normalizeSpiceName(spiceName);
+  return cabinet.find((c) => {
+    const normCab = normalizeSpiceName(c.item_name);
+    return normCab === normTarget || normCab.includes(normTarget) || normTarget.includes(normCab);
+  });
+}
+
 export function evaluateBlendStock(
   blendName: string,
   cabinet: CabinetItem[]
@@ -265,14 +288,25 @@ export function evaluateBlendStock(
   const def = findBlendDefinition(blendName);
   if (!def) return null;
 
+  // Single unified rule: a blend counts as available if the user holds the blend itself
+  // in their cabinet OR holds every base spice required to mix it.
+  const directBlendItem = cabinet.find(
+    (c) =>
+      c.status !== 'out_of_stock' &&
+      (c.item_name.toLowerCase().trim() === def.name.toLowerCase().trim() ||
+        def.aliases?.some((al) => c.item_name.toLowerCase().trim() === al.toLowerCase().trim()))
+  );
+
   const missingSpices: string[] = [];
   const lowSpices: string[] = [];
 
   const componentStatuses = def.components.map((comp) => {
-    const found = cabinet.find(
-      (c) => c.item_name.toLowerCase() === comp.spiceName.toLowerCase()
-    );
-    const status: StockStatus = found ? found.status : 'out_of_stock';
+    const found = findCabinetSpiceMatch(comp.spiceName, cabinet);
+    const status: StockStatus = directBlendItem
+      ? directBlendItem.status
+      : found
+      ? found.status
+      : 'out_of_stock';
     if (status === 'out_of_stock') {
       missingSpices.push(comp.spiceName);
     } else if (status === 'low') {
@@ -286,7 +320,9 @@ export function evaluateBlendStock(
   });
 
   let overallStatus: 'ready' | 'low_stock' | 'missing_items' = 'ready';
-  if (missingSpices.length > 0) {
+  if (directBlendItem) {
+    overallStatus = directBlendItem.status === 'low' ? 'low_stock' : 'ready';
+  } else if (missingSpices.length > 0) {
     overallStatus = 'missing_items';
   } else if (lowSpices.length > 0) {
     overallStatus = 'low_stock';

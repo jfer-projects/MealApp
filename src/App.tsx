@@ -1923,6 +1923,7 @@ export const App: React.FC = () => {
           <CookingView
             recipe={activeCookingRecipe}
             allVersions={activeCookingRecipeVersions}
+            cabinet={cabinet}
             servings={cookingServings}
             isDairyFree={isDairyFree}
             geminiApiKey={geminiApiKey}

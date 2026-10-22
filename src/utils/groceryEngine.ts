@@ -8,7 +8,11 @@ import {
 } from '../types/freshdiy';
 
 export type { AggregatedGroceryItem };
-import { evaluateBlendStock, HELLOFRESH_PROPRIETARY_BLENDS } from './blendDecoder';
+import {
+  evaluateBlendStock,
+  findBlendDefinition,
+  HELLOFRESH_PROPRIETARY_BLENDS,
+} from './blendDecoder';
 import { formatAmount, transformIngredient } from './dairyEngine';
 import { getItemStoreLocation, StoreLayout } from './storeLayouts';
 
@@ -198,12 +202,15 @@ export function buildAggregatedGroceryList(
         : null;
       let isStruckByCabinet = cabinetStatus === 'in_stock';
 
-      if (transformed.blend_name) {
-        const evalResult = evaluateBlendStock(transformed.blend_name, cabinet);
+      const matchedBlendDef = findBlendDefinition(
+        transformed.blend_name || transformed.name
+      );
+      if (matchedBlendDef) {
+        const evalResult = evaluateBlendStock(matchedBlendDef.name, cabinet);
         if (evalResult) {
           const canMake = evalResult.overallStatus !== 'missing_items';
           blendBreakdown = {
-            blendName: transformed.blend_name,
+            blendName: matchedBlendDef.name,
             canMakeFromCabinet: canMake,
             missingSpices: evalResult.missingSpices,
           };

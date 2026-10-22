@@ -19,12 +19,14 @@ import {
   Wind,
 } from 'lucide-react';
 import {
+  CabinetItem,
   Recipe,
   RecipeFeedback,
   RecipeRating,
   ServingsSize,
 } from '../types/freshdiy';
 import {
+  evaluateBlendStock,
   findBlendDefinition,
   HELLOFRESH_PROPRIETARY_BLENDS,
 } from '../utils/blendDecoder';
@@ -37,6 +39,7 @@ import {
 interface CookingViewProps {
   recipe: Recipe;
   allVersions: Recipe[];
+  cabinet?: CabinetItem[];
   servings: ServingsSize;
   isDairyFree: boolean;
   geminiApiKey?: string;
@@ -70,6 +73,7 @@ const QUICK_FEEDBACK_PRESETS = [
 export const CookingView: React.FC<CookingViewProps> = ({
   recipe,
   allVersions,
+  cabinet = [],
   servings,
   isDairyFree,
   geminiApiKey = '',
@@ -414,6 +418,11 @@ export const CookingView: React.FC<CookingViewProps> = ({
               const matchedBlend = findBlendDefinition(
                 ing.blend_name || ing.name
               );
+              const blendEval = matchedBlend
+                ? evaluateBlendStock(matchedBlend.name, cabinet)
+                : null;
+              const isBlendReady =
+                blendEval && blendEval.overallStatus !== 'missing_items';
 
               return (
                 <li
@@ -425,7 +434,9 @@ export const CookingView: React.FC<CookingViewProps> = ({
                   }}
                   className={`p-2.5 rounded-xl border text-xs flex items-center justify-between transition ${
                     matchedBlend
-                      ? 'bg-amber-50/80 border-amber-300 text-amber-950 cursor-pointer hover:bg-amber-100/80 ring-1 ring-amber-400/30'
+                      ? isBlendReady
+                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950 cursor-pointer hover:bg-emerald-100/70'
+                        : 'bg-amber-50/80 border-amber-300 text-amber-950 cursor-pointer hover:bg-amber-100/80'
                       : ing.original_dairy_name
                       ? 'bg-teal-50/70 border-teal-200 text-teal-950'
                       : 'bg-slate-50/70 border-slate-200/80 text-slate-800'
@@ -438,9 +449,18 @@ export const CookingView: React.FC<CookingViewProps> = ({
                         🌱 {ing.substitution_note}
                       </span>
                     )}
-                    {matchedBlend && (
-                      <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-amber-200/80 text-[10px] text-amber-950 font-extrabold">
-                        <Beaker className="w-3 h-3" /> Click to see how to make {matchedBlend.name}
+                    {matchedBlend && blendEval && (
+                      <span
+                        className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
+                          isBlendReady
+                            ? 'bg-emerald-100 text-emerald-900'
+                            : 'bg-slate-200/80 text-slate-800'
+                        }`}
+                      >
+                        <Beaker className="w-3 h-3" />{' '}
+                        {isBlendReady
+                          ? `Ready to Mix (${matchedBlend.name})`
+                          : `Make it yourself (${matchedBlend.name})`}
                       </span>
                     )}
                   </div>

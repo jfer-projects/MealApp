@@ -4,7 +4,11 @@ import {
   RecipeIngredient,
   ServingsSize,
 } from '../types/freshdiy';
-import { evaluateBlendStock, HELLOFRESH_PROPRIETARY_BLENDS } from './blendDecoder';
+import {
+  evaluateBlendStock,
+  findBlendDefinition,
+  HELLOFRESH_PROPRIETARY_BLENDS,
+} from './blendDecoder';
 import { transformIngredient } from './dairyEngine';
 
 export interface RecipeMatchResult {
@@ -236,8 +240,9 @@ export function evaluateRecipeMatch(
     }
 
     // 2. Check if it's a HelloFresh proprietary blend that can be mixed from the Cabinet
-    if (ing.blend_name) {
-      if (ctx.readyBlends.has(ing.blend_name.toLowerCase())) {
+    const matchedBlend = findBlendDefinition(ing.blend_name || ing.name);
+    if (matchedBlend) {
+      if (ctx.readyBlends.has(matchedBlend.name.toLowerCase())) {
         matchedCabinetItems.push(`${ing.name} (DIY from Cabinet)`);
         continue;
       }
