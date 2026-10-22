@@ -23,6 +23,21 @@
           navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration error:', err));
         });
       }
+      // Remove any injected third-party floating badge that overlaps the mobile bottom bar
+      (function () {
+        function removeFloatingBadges() {
+          document.querySelectorAll('body > a[href*="netlify"], body > div:not(#root)').forEach((el) => {
+            const text = (el.textContent || '').toLowerCase();
+            const html = (el.innerHTML || '').toLowerCase();
+            if (text.includes('netlify') || html.includes('netlify.com')) {
+              el.remove();
+            }
+          });
+        }
+        removeFloatingBadges();
+        const obs = new MutationObserver(removeFloatingBadges);
+        obs.observe(document.documentElement, { childList: true, subtree: true });
+      })();
     </script>
   </body>
 </html>
