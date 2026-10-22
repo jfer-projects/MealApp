@@ -1,7 +1,54 @@
 import { supabase } from '../lib/supabase';
 import { CabinetItem, MacroGoals, MacroMealSuggestion, Recipe } from '../types/freshdiy';
 
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+
+/**
+ * Extracts the non-thought text response from a Gemini generateContent payload.
+ */
+function extractModelText(json: any): string {
+  const parts = json?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts) || parts.length === 0) return '';
+  const outputParts = parts.filter((p: any) => typeof p?.text === 'string' && !p?.thought);
+  if (outputParts.length > 0) {
+    return outputParts.map((p: any) => p.text).join('\n').trim();
+  }
+  return parts.map((p: any) => p?.text || '').join('\n').trim();
+}
+
+/**
+ * Resiliently parses a JSON array from model text, salvaging complete objects if truncated.
+ */
+function parseJsonArrayFromText(rawText: string): any[] {
+  const stripped = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const firstBracket = stripped.indexOf('[');
+  const lastBracket = stripped.lastIndexOf(']');
+  const candidate =
+    firstBracket !== -1 && lastBracket > firstBracket
+      ? stripped.slice(firstBracket, lastBracket + 1)
+      : stripped;
+
+  try {
+    const parsed = JSON.parse(candidate);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // If truncated mid-stream, salvage all complete JSON objects `{ ... }`
+    const matches = stripped.match(/\{[^{}]*\}/g);
+    if (matches && matches.length > 0) {
+      const salvaged: any[] = [];
+      for (const m of matches) {
+        try {
+          salvaged.push(JSON.parse(m));
+        } catch {
+          // skip malformed fragment
+        }
+      }
+      if (salvaged.length > 0) return salvaged;
+    }
+    throw new Error('Could not parse JSON array from Gemini response.');
+  }
+  return [];
+}
 
 /**
  * Calls Google Gemini either via the server proxy `/api/gemini` (when using a masked
@@ -68,18 +115,60 @@ async function callGeminiModel(params: {
 }
 
 /**
- * Converts a browser File to base64 for Gemini API payload
+ * Converts and compresses a browser File to base64 (max 1600px JPEG) so mobile camera
+ * photos upload quickly and reliably to the Gemini Vision API.
  */
 export async function fileToBase64(file: File): Promise<{ mimeType: string; data: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      const base64Data = result.split(',')[1];
-      resolve({
-        mimeType: file.type || 'image/jpeg',
-        data: base64Data,
-      });
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const MAX_DIM = 1600;
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width >= height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve({
+              mimeType: file.type || 'image/jpeg',
+              data: result.split(',')[1],
+            });
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.84);
+          resolve({
+            mimeType: 'image/jpeg',
+            data: compressedDataUrl.split(',')[1],
+          });
+        } catch {
+          resolve({
+            mimeType: file.type || 'image/jpeg',
+            data: result.split(',')[1],
+          });
+        }
+      };
+      img.onerror = () => {
+        resolve({
+          mimeType: file.type || 'image/jpeg',
+          data: result.split(',')[1],
+        });
+      };
+      img.src = result;
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
@@ -137,13 +226,11 @@ Do not include markdown code block quotes, just the raw JSON array.`;
         ],
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 1024,
+          maxOutputTokens: 8192,
         },
       });
-      const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-
-      const parsed = JSON.parse(cleanJson);
+      const rawText = extractModelText(json);
+      const parsed = parseJsonArrayFromText(rawText);
       if (Array.isArray(parsed)) {
         return parsed.map((item: any) => ({
           name: String(item.name || '').trim(),
@@ -205,10 +292,10 @@ Do not wrap in markdown quotes. Just return the JSON.`;
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
         },
       });
-      const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const rawText = extractModelText(json);
       const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
       const result = JSON.parse(cleanJson);
 
@@ -343,12 +430,11 @@ Do not wrap in markdown quotes. Just return the raw JSON array.`;
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.2,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
         },
       });
-      const rawText = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const cleanJson = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
+      const rawText = extractModelText(json);
+      const parsed = parseJsonArrayFromText(rawText);
 
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed.map((item: any, idx: number) => ({

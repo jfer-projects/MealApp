@@ -1969,7 +1969,7 @@ export const App: React.FC = () => {
       </main>
 
       {/* NATIVE-STYLE MOBILE BOTTOM NAVIGATION BAR */}
-      <nav className="fixed bottom-0 inset-x-0 z-[9990] md:hidden bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] grid grid-cols-5 items-center shadow-2xl">
+      <nav className="fixed bottom-0 inset-x-0 z-40 md:hidden bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] grid grid-cols-5 items-center shadow-2xl">
         <button
           onClick={() => setActiveTab('catalog')}
           className={`flex flex-col items-center justify-center py-1 rounded-xl transition cursor-pointer ${

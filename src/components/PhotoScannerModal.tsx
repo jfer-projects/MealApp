@@ -72,6 +72,15 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
     }
   }, [initialMode, isOpen]);
 
+  useEffect(() => {
+    if (geminiApiKey && geminiApiKey.trim()) {
+      setShowApiKeyConfig(false);
+      if (isKeyAuthor) {
+        setTempApiKey(geminiApiKey.trim());
+      }
+    }
+  }, [geminiApiKey, isKeyAuthor]);
+
   if (!isOpen) return null;
 
   const effectiveApiKey = (geminiApiKey || tempApiKey || '').trim();
@@ -157,21 +166,21 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-t-3xl sm:rounded-3xl border border-slate-200 max-w-lg w-full max-h-[92vh] overflow-y-auto p-5 sm:p-6 shadow-2xl space-y-5"
+        className="bg-white rounded-t-3xl sm:rounded-3xl border border-slate-200 max-w-lg w-full max-h-[90dvh] flex flex-col shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Header */}
-        <div className="flex items-start justify-between gap-3">
+        {/* Sticky Top Header */}
+        <div className="flex items-start justify-between gap-3 p-4 sm:p-5 border-b border-slate-100 bg-white shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
+            <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700 shrink-0">
               <Camera className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-900">
+              <h3 className="text-base sm:text-lg font-black text-slate-900">
                 AI Photo Ingredient Scanner
               </h3>
               <p className="text-xs text-slate-500">
@@ -180,7 +189,7 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             {isKeyAuthor && (
               <button
                 onClick={() => setShowApiKeyConfig(!showApiKeyConfig)}
@@ -198,6 +207,9 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Scrollable Modal Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 pb-8 space-y-4">
 
         {/* Gemini Vision Key Status & Inline Setup */}
         {!isKeyAuthor && hasFamilyKey ? (
@@ -501,6 +513,7 @@ export const PhotoScannerModal: React.FC<PhotoScannerModalProps> = ({
             </button>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
