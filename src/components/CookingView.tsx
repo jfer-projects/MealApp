@@ -101,11 +101,11 @@ export const CookingView: React.FC<CookingViewProps> = ({
   );
   const [wakeLockActive, setWakeLockActive] = useState(false);
 
-  // Screen Wake Lock API to prevent phone sleep while cooking
+  // Screen Wake Lock API to prevent phone sleep while cooking (re-acquires on tab visibility)
   useEffect(() => {
     let wakeLock: any = null;
     const requestWakeLock = async () => {
-      if ('wakeLock' in navigator) {
+      if ('wakeLock' in navigator && document.visibilityState === 'visible') {
         try {
           wakeLock = await (navigator as any).wakeLock.request('screen');
           setWakeLockActive(true);
@@ -116,16 +116,52 @@ export const CookingView: React.FC<CookingViewProps> = ({
     };
     requestWakeLock();
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (wakeLock) {
         wakeLock.release().catch(() => {});
       }
     };
   }, []);
 
-  // Timer state per step number
+  // Timer state per step number, persisted by target timestamp so switching tabs never loses time
+  const timerStorageKey = `freshdiy_timers_${recipe.id}`;
+  const [timerAlertMessage, setTimerAlertMessage] = useState<string | null>(null);
+
+  const playTimerChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      [523.25, 659.25, 783.99].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.18, ctx.currentTime + idx * 0.16);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.16 + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + idx * 0.16);
+        osc.stop(ctx.currentTime + idx * 0.16 + 0.36);
+      });
+    } catch {
+      // ignore audio context restrictions
+    }
+  };
+
   const [timers, setTimers] = useState<
-    Record<number, { remaining: number; running: boolean; initial: number }>
+    Record<
+      number,
+      { remaining: number; running: boolean; initial: number; endTimeMs?: number | null }
+    >
   >({});
 
   const authorOptions = useMemo(() => {
@@ -151,45 +187,92 @@ export const CookingView: React.FC<CookingViewProps> = ({
   const [forkBanner, setForkBanner] = useState<string | null>(null);
 
   useEffect(() => {
+    let saved: Record<
+      number,
+      { remaining: number; running: boolean; initial: number; endTimeMs?: number | null }
+    > | null = null;
+    try {
+      const raw = localStorage.getItem(timerStorageKey);
+      if (raw) saved = JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+
+    const now = Date.now();
     const init: Record<
       number,
-      { remaining: number; running: boolean; initial: number }
+      { remaining: number; running: boolean; initial: number; endTimeMs?: number | null }
     > = {};
     for (const st of recipe.instructions_json) {
       if (st.timer_seconds) {
-        init[st.step] = {
-          remaining: st.timer_seconds,
-          running: false,
-          initial: st.timer_seconds,
-        };
+        const prev = saved?.[st.step];
+        if (prev && prev.running && prev.endTimeMs) {
+          const rem = Math.max(0, Math.ceil((prev.endTimeMs - now) / 1000));
+          init[st.step] = {
+            remaining: rem,
+            running: rem > 0,
+            initial: st.timer_seconds,
+            endTimeMs: rem > 0 ? prev.endTimeMs : null,
+          };
+        } else if (prev) {
+          init[st.step] = {
+            remaining: prev.remaining,
+            running: false,
+            initial: st.timer_seconds,
+            endTimeMs: null,
+          };
+        } else {
+          init[st.step] = {
+            remaining: st.timer_seconds,
+            running: false,
+            initial: st.timer_seconds,
+            endTimeMs: null,
+          };
+        }
       }
     }
     setTimers(init);
     setCompletedSteps({});
-  }, [recipe]);
+  }, [recipe, timerStorageKey]);
 
   useEffect(() => {
     const interval = setInterval(() => {
+      const now = Date.now();
       setTimers((prev) => {
         let changed = false;
         const next = { ...prev };
         for (const stepKey of Object.keys(next)) {
           const k = Number(stepKey);
           const t = next[k];
-          if (t && t.running && t.remaining > 0) {
+          if (t && t.running) {
             changed = true;
+            const targetEnd = t.endTimeMs || now + (t.remaining - 1) * 1000;
+            const newRemaining = Math.max(0, Math.ceil((targetEnd - now) / 1000));
+            const stillRunning = newRemaining > 0;
             next[k] = {
               ...t,
-              remaining: t.remaining - 1,
-              running: t.remaining - 1 > 0,
+              remaining: newRemaining,
+              running: stillRunning,
+              endTimeMs: stillRunning ? targetEnd : null,
             };
+            if (!stillRunning && t.remaining > 0) {
+              playTimerChime();
+              setTimerAlertMessage(`🔔 Step ${k} timer finished!`);
+            }
+          }
+        }
+        if (changed) {
+          try {
+            localStorage.setItem(timerStorageKey, JSON.stringify(next));
+          } catch {
+            // ignore
           }
         }
         return changed ? next : prev;
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [timerStorageKey]);
 
   const scaledIngredients = useMemo(
     () =>
@@ -467,7 +550,7 @@ export const CookingView: React.FC<CookingViewProps> = ({
                     )}
                   </div>
                   <span className="font-extrabold text-slate-900 ml-2 shrink-0">
-                    {formatAmount(ing.amount)} {ing.unit}
+                    {[formatAmount(ing.amount), ing.unit].filter(Boolean).join(' ')}
                   </span>
                 </li>
               );
@@ -477,6 +560,19 @@ export const CookingView: React.FC<CookingViewProps> = ({
 
         {/* Interactive Step-by-Step Cooking Cards */}
         <div className="lg:col-span-2 space-y-4">
+          {timerAlertMessage && (
+            <div className="p-3.5 rounded-2xl bg-amber-500 text-slate-950 font-black text-xs flex items-center justify-between shadow-md">
+              <span>{timerAlertMessage}</span>
+              <button
+                type="button"
+                onClick={() => setTimerAlertMessage(null)}
+                className="px-2 py-0.5 rounded-lg bg-black/10 hover:bg-black/20 text-slate-950 cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {scaledInstructions.map((step) => {
             const isDone = Boolean(completedSteps[step.step]);
             const timer = timers[step.step];
@@ -502,34 +598,59 @@ export const CookingView: React.FC<CookingViewProps> = ({
 
             return (
               <div
+                id={`cooking-step-${step.step}`}
                 key={step.step}
-                className={`rounded-2xl border p-5 bg-white shadow-xs transition ${
+                className={`rounded-2xl border p-4 sm:p-5 bg-white shadow-xs transition ${
                   isDone
-                    ? 'border-emerald-300 bg-emerald-50/30 opacity-80'
+                    ? 'border-emerald-300 bg-emerald-50/40'
                     : 'border-slate-200'
                 }`}
               >
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-7 h-7 rounded-xl bg-slate-900 text-white text-xs font-extrabold flex items-center justify-center">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className={`w-7 h-7 rounded-xl text-white text-xs font-extrabold flex items-center justify-center shrink-0 ${
+                        isDone ? 'bg-emerald-600' : 'bg-slate-900'
+                      }`}
+                    >
                       {step.step}
                     </span>
                     <h3 className="font-bold text-slate-900 text-base">
-                      {step.title}
+                      Step {step.step}
                     </h3>
+                    {isDone && (
+                      <span className="text-xs text-emerald-700 font-semibold truncate">
+                        • Completed
+                      </span>
+                    )}
                   </div>
 
                   <button
-                    onClick={() =>
+                    type="button"
+                    onClick={() => {
+                      const nextDone = !isDone;
                       setCompletedSteps((prev) => ({
                         ...prev,
-                        [step.step]: !prev[step.step],
-                      }))
-                    }
-                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        [step.step]: nextDone,
+                      }));
+                      if (nextDone) {
+                        setTimeout(() => {
+                          const nextEl = document.getElementById(
+                            `cooking-step-${step.step + 1}`
+                          );
+                          if (nextEl) {
+                            nextEl.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'center',
+                            });
+                          }
+                        }, 120);
+                      }
+                    }}
+                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
                       isDone
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
@@ -537,106 +658,140 @@ export const CookingView: React.FC<CookingViewProps> = ({
                   </button>
                 </div>
 
-                <p className="text-sm text-slate-700 leading-relaxed">
-                  {step.body}
-                </p>
+                {!isDone && (
+                  <div className="mt-3">
+                    <p className="text-sm text-slate-700 leading-relaxed">
+                      {step.body}
+                    </p>
 
-                {/* Clickable DIY Blend Buttons inside Step Card */}
-                {stepBlends.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {stepBlends.map((b) => (
-                      <button
-                        key={b.name}
-                        onClick={() => onOpenBlendModal(b.name)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 text-xs font-bold transition cursor-pointer"
-                      >
-                        <Beaker className="w-3.5 h-3.5 text-amber-700" />
-                        How to make {b.name} ({b.yieldNote.split(':')[1]?.trim() || 'View DIY Formula'})
-                      </button>
-                    ))}
-                  </div>
-                )}
+                    {/* Clickable DIY Blend Buttons inside Step Card */}
+                    {stepBlends.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {stepBlends.map((b) => (
+                          <button
+                            key={b.name}
+                            onClick={() => onOpenBlendModal(b.name)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 text-xs font-bold transition cursor-pointer"
+                          >
+                            <Beaker className="w-3.5 h-3.5 text-amber-700" />
+                            How to make {b.name} ({b.yieldNote.split(':')[1]?.trim() || 'View DIY Formula'})
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-                {/* Appliance Diversion Callouts */}
-                {airFryerText && (
-                  <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 flex items-start gap-2">
-                    <Wind className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="font-bold">
-                        Air Fryer Diversion Step:
-                      </strong>{' '}
-                      {airFryerText}
-                    </div>
-                  </div>
-                )}
+                    {/* Appliance Diversion Callouts */}
+                    {airFryerText && (
+                      <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 flex items-start gap-2">
+                        <Wind className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <strong className="font-bold">
+                            Air Fryer Diversion Step:
+                          </strong>{' '}
+                          {airFryerText}
+                        </div>
+                      </div>
+                    )}
 
-                {riceCookerText && (
-                  <div className="mt-3 p-3 rounded-xl bg-sky-50 border border-sky-200 text-xs text-sky-950 flex items-start gap-2">
-                    <Flame className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="font-bold">
-                        Rice Cooker Diversion Step:
-                      </strong>{' '}
-                      {riceCookerText}
-                    </div>
-                  </div>
-                )}
+                    {riceCookerText && (
+                      <div className="mt-3 p-3 rounded-xl bg-sky-50 border border-sky-200 text-xs text-sky-950 flex items-start gap-2">
+                        <Flame className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                        <div>
+                          <strong className="font-bold">
+                            Rice Cooker Diversion Step:
+                          </strong>{' '}
+                          {riceCookerText}
+                        </div>
+                      </div>
+                    )}
 
-                {/* Interactive Step Countdown Timer */}
-                {timer && (
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-emerald-600" />
-                      <span className="font-mono text-sm font-extrabold text-slate-900">
-                        {formatTimer(timer.remaining)}
-                      </span>
-                      {timer.remaining === 0 && (
-                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">
-                          🔔 Timer Done!
-                        </span>
-                      )}
-                    </div>
+                    {/* Interactive Step Countdown Timer */}
+                    {timer && (
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-emerald-600" />
+                          <span className="font-mono text-sm font-extrabold text-slate-900">
+                            {formatTimer(timer.remaining)}
+                          </span>
+                          {timer.remaining === 0 && (
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">
+                              Timer Done!
+                            </span>
+                          )}
+                        </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() =>
-                          setTimers((prev) => ({
-                            ...prev,
-                            [step.step]: {
-                              ...prev[step.step],
-                              running: !prev[step.step].running,
-                            },
-                          }))
-                        }
-                        className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
-                      >
-                        {timer.running ? (
-                          <>
-                            <Pause className="w-3 h-3" /> Pause
-                          </>
-                        ) : (
-                          <>
-                            <Play className="w-3 h-3" /> Start Timer
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={() =>
-                          setTimers((prev) => ({
-                            ...prev,
-                            [step.step]: {
-                              ...prev[step.step],
-                              running: false,
-                              remaining: prev[step.step].initial,
-                            },
-                          }))
-                        }
-                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
-                        title="Reset Timer"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setTimers((prev) => {
+                                const current = prev[step.step];
+                                const nextRunning = !current.running;
+                                const nextState = {
+                                  ...prev,
+                                  [step.step]: {
+                                    ...current,
+                                    running: nextRunning,
+                                    endTimeMs: nextRunning
+                                      ? Date.now() + current.remaining * 1000
+                                      : null,
+                                  },
+                                };
+                                try {
+                                  localStorage.setItem(
+                                    timerStorageKey,
+                                    JSON.stringify(nextState)
+                                  );
+                                } catch {
+                                  // ignore
+                                }
+                                return nextState;
+                              })
+                            }
+                            className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                          >
+                            {timer.running ? (
+                              <>
+                                <Pause className="w-3 h-3" /> Pause
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3 h-3" /> Start Timer
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setTimers((prev) => {
+                                const nextState = {
+                                  ...prev,
+                                  [step.step]: {
+                                    ...prev[step.step],
+                                    running: false,
+                                    remaining: prev[step.step].initial,
+                                    endTimeMs: null,
+                                  },
+                                };
+                                try {
+                                  localStorage.setItem(
+                                    timerStorageKey,
+                                    JSON.stringify(nextState)
+                                  );
+                                } catch {
+                                  // ignore
+                                }
+                                return nextState;
+                              })
+                            }
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                            title="Reset Timer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
