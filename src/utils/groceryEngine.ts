@@ -306,8 +306,14 @@ export function formatGroceryListForValleria(
           : '';
       const lowNote = item.cabinetStatus === 'low' ? ' (Running low in cabinet)' : '';
       const aisleTag = loc.aisleNumber ? `[Aisle ${loc.aisleNumber}] ` : '';
+      const qtyLabel =
+        item.unit === 'to taste' || item.unit === 'as needed'
+          ? `${item.name} (${item.unit})`
+          : [formatAmount(item.totalAmount), item.unit, item.name]
+              .filter(Boolean)
+              .join(' ');
       bucket.lines.push(
-        `• ${aisleTag}${formatAmount(item.totalAmount)} ${item.unit} ${item.name}${dairyTag}${blendMissingNote}${lowNote}`
+        `• ${aisleTag}${qtyLabel}${dairyTag}${blendMissingNote}${lowNote}`
       );
     }
 

@@ -685,7 +685,11 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                   isCrossed ? 'line-through text-slate-400' : 'text-slate-900'
                 }`}
               >
-                {formatAmount(item.totalAmount)} {item.unit} {item.name}
+                {item.unit === 'to taste' || item.unit === 'as needed'
+                  ? `${item.name} (${item.unit})`
+                  : [formatAmount(item.totalAmount), item.unit, item.name]
+                      .filter(Boolean)
+                      .join(' ')}
               </span>
 
               {/* Stop & Shop Exact Location Badge */}

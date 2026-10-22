@@ -134,6 +134,7 @@ export const DAIRY_SUBSTITUTION_MATRIX: DairySubstitutionRule[] = [
 ];
 
 export function formatAmount(val: number): string {
+  if (!val || val <= 0) return '';
   const rounded = Math.round(val * 100) / 100;
   if (Number.isInteger(rounded)) return String(rounded);
   const whole = Math.floor(rounded);
@@ -145,6 +146,46 @@ export function formatAmount(val: number): string {
   if (Math.abs(frac - 0.66) < 0.05) return `${prefix}⅔`;
   if (Math.abs(frac - 0.75) < 0.04) return `${prefix}¾`;
   return String(Math.round(val * 10) / 10);
+}
+
+function pluralizeCountableIngredientName(name: string, amount: number): string {
+  if (amount <= 1 || !name) return name;
+  return name
+    .replace(/\b(Potato)$/i, '$1es')
+    .replace(/\b(Tomato)$/i, '$1es')
+    .replace(/\b(Carrot|Onion|Scallion|Shallot|Lemon|Lime|Apple|Cucumber|Zucchini|Egg|Avocado|Mushroom|Pepper|Jalape[ñn]o|Tortilla|Bun|Flatbread|Baguette|Roll|Clove|Brioche Bun|Potato Bun)$/i, (m) =>
+      /s$/i.test(m) ? m : `${m}s`
+    );
+}
+
+function normalizeUnitAndAmount(
+  amount: number,
+  rawUnit: string,
+  name: string
+): { amount: number; unit: string; name: string } {
+  const cleanName = (name || '').trim();
+  const u = (rawUnit || '').trim();
+  const isGenericUnit = /^units?$/i.test(u) || /^items?$/i.test(u);
+
+  if (/^(?:kosher\s+|sea\s+|flaky\s+)?salt$|^(?:black\s+|white\s+)?pepper$|^salt\s*(?:&|and)\s*pepper$/i.test(cleanName)) {
+    return { amount: 0, unit: 'to taste', name: cleanName };
+  }
+
+  if (
+    isGenericUnit &&
+    /\b(?:cooking|olive|vegetable|canola|sesame|avocado|peanut)\s+oil\b|^oil$/i.test(cleanName)
+  ) {
+    return { amount: 0, unit: 'as needed', name: cleanName };
+  }
+
+  const finalUnit = isGenericUnit ? '' : u;
+  const finalName = finalUnit === '' ? pluralizeCountableIngredientName(cleanName, amount) : cleanName;
+
+  return {
+    amount,
+    unit: finalUnit,
+    name: finalName,
+  };
 }
 
 function applyDairySubstitutionsToText(input: string): {
@@ -193,21 +234,25 @@ export function transformIngredient(
   isDairyFree: boolean
 ): RecipeIngredient {
   const ratio = targetServings / (baseServings || 4);
-  const scaledAmount = Math.round(ing.amount * ratio * 100) / 100;
+  const rawScaledAmount = Math.round(ing.amount * ratio * 100) / 100;
+  const norm = normalizeUnitAndAmount(rawScaledAmount, ing.unit, ing.name);
 
-  if (!isDairyFree || NON_DAIRY_SAFELIST.test(ing.name)) {
+  if (!isDairyFree || NON_DAIRY_SAFELIST.test(norm.name)) {
     return {
       ...ing,
-      amount: scaledAmount,
+      name: norm.name,
+      amount: norm.amount,
+      unit: norm.unit,
     };
   }
 
-  const { text: newName, matchedRule } = applyDairySubstitutionsToText(ing.name);
-  if (matchedRule && newName !== ing.name) {
+  const { text: newName, matchedRule } = applyDairySubstitutionsToText(norm.name);
+  if (matchedRule && newName !== norm.name) {
     return {
       ...ing,
       name: newName,
-      amount: scaledAmount,
+      amount: norm.amount,
+      unit: norm.unit,
       aisle: 'Dairy Alternatives',
       original_dairy_name: ing.name,
       substitution_note: matchedRule.secondaryHint
@@ -218,7 +263,9 @@ export function transformIngredient(
 
   return {
     ...ing,
-    amount: scaledAmount,
+    name: norm.name,
+    amount: norm.amount,
+    unit: norm.unit,
   };
 }
 
@@ -237,16 +284,18 @@ export function transformInstructionText(
   if (!text) return text;
   const ratio = targetServings / (baseServings || 4);
 
-  // Scale inline quantities followed by culinary units
-  let result = text.replace(
-    /\b(\d+(?:\.\d+)?)\s*(oz|tbsp|tsp|cups?|g|grams?|buns?|pieces?|flatbreads?)\b/gi,
-    (_match, numStr, unit) => {
-      const val = parseFloat(numStr);
-      if (Number.isNaN(val)) return _match;
-      const scaled = val * ratio;
-      return `${formatAmount(scaled)} ${unit}`;
-    }
-  );
+  // Scale inline quantities followed by culinary units, and strip raw "unit/units"
+  let result = text
+    .replace(
+      /\b(\d+(?:\.\d+)?)\s*(oz|tbsp|tsp|cups?|g|grams?|buns?|pieces?|flatbreads?)\b/gi,
+      (_match, numStr, unit) => {
+        const val = parseFloat(numStr);
+        if (Number.isNaN(val)) return _match;
+        const scaled = val * ratio;
+        return `${formatAmount(scaled)} ${unit}`;
+      }
+    )
+    .replace(/\b(\d+(?:\.\d+)?)\s+units?\b/gi, '$1');
 
   if (isDairyFree) {
     result = applyDairySubstitutionsToText(result).text;
