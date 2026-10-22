@@ -1,7 +1,24 @@
 import { supabase } from '../lib/supabase';
 import { CabinetItem, MacroGoals, MacroMealSuggestion, Recipe } from '../types/freshdiy';
 
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite'];
+const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-3.0-flash',
+  'gemini-flash-latest',
+  'gemini-2.5-flash-lite',
+];
+
+function sendScanDebug(payload: Record<string, any>) {
+  try {
+    fetch('/__scan_debug', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  } catch {
+    // ignore in production
+  }
+}
 
 /**
  * Extracts the non-thought text response from a Gemini generateContent payload.
@@ -17,36 +34,51 @@ function extractModelText(json: any): string {
 }
 
 /**
- * Resiliently parses a JSON array from model text, salvaging complete objects if truncated.
+ * Resiliently parses a JSON array from model text, handling wrapped objects, string arrays,
+ * and salvaging complete objects if truncated.
  */
 function parseJsonArrayFromText(rawText: string): any[] {
   const stripped = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+  if (!stripped) return [];
+
+  // 1. Try parsing the raw stripped text directly first (handles both `[...]` and `{ "items": [...] }`)
+  try {
+    const direct = JSON.parse(stripped);
+    if (Array.isArray(direct)) return direct;
+    if (direct && typeof direct === 'object') {
+      const nestedArr = Object.values(direct).find((v) => Array.isArray(v)) as any[] | undefined;
+      if (nestedArr) return nestedArr;
+    }
+  } catch {
+    // continue to bracket extraction
+  }
+
+  // 2. Extract between first `[` and last `]`
   const firstBracket = stripped.indexOf('[');
   const lastBracket = stripped.lastIndexOf(']');
-  const candidate =
-    firstBracket !== -1 && lastBracket > firstBracket
-      ? stripped.slice(firstBracket, lastBracket + 1)
-      : stripped;
-
-  try {
-    const parsed = JSON.parse(candidate);
-    if (Array.isArray(parsed)) return parsed;
-  } catch {
-    // If truncated mid-stream, salvage all complete JSON objects `{ ... }`
-    const matches = stripped.match(/\{[^{}]*\}/g);
-    if (matches && matches.length > 0) {
-      const salvaged: any[] = [];
-      for (const m of matches) {
-        try {
-          salvaged.push(JSON.parse(m));
-        } catch {
-          // skip malformed fragment
-        }
-      }
-      if (salvaged.length > 0) return salvaged;
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    try {
+      const parsed = JSON.parse(stripped.slice(firstBracket, lastBracket + 1));
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // continue to object salvage
     }
-    throw new Error('Could not parse JSON array from Gemini response.');
   }
+
+  // 3. If truncated mid-stream, salvage all complete JSON objects `{ ... }`
+  const matches = stripped.match(/\{[^{}]*\}/g);
+  if (matches && matches.length > 0) {
+    const salvaged: any[] = [];
+    for (const m of matches) {
+      try {
+        salvaged.push(JSON.parse(m));
+      } catch {
+        // skip malformed fragment
+      }
+    }
+    if (salvaged.length > 0) return salvaged;
+  }
+
   return [];
 }
 
@@ -115,63 +147,116 @@ async function callGeminiModel(params: {
 }
 
 /**
- * Converts and compresses a browser File to base64 (max 1600px JPEG) so mobile camera
- * photos upload quickly and reliably to the Gemini Vision API.
+ * Converts a browser File to base64 for Gemini Vision API.
+ * Uses direct FileReader for normal photos (< 4MB) and safe canvas downscaling only for huge raw images.
  */
 export async function fileToBase64(file: File): Promise<{ mimeType: string; data: string }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const MAX_DIM = 1600;
-          let width = img.width;
-          let height = img.height;
-          if (width > MAX_DIM || height > MAX_DIM) {
-            if (width >= height) {
-              height = Math.round((height * MAX_DIM) / width);
-              width = MAX_DIM;
-            } else {
-              width = Math.round((width * MAX_DIM) / height);
-              height = MAX_DIM;
-            }
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            resolve({
-              mimeType: file.type || 'image/jpeg',
-              data: result.split(',')[1],
-            });
-            return;
-          }
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.84);
-          resolve({
-            mimeType: 'image/jpeg',
-            data: compressedDataUrl.split(',')[1],
-          });
-        } catch {
-          resolve({
-            mimeType: file.type || 'image/jpeg',
-            data: result.split(',')[1],
-          });
-        }
-      };
-      img.onerror = () => {
+  const rawFallback = (): Promise<{ mimeType: string; data: string }> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
         resolve({
           mimeType: file.type || 'image/jpeg',
-          data: result.split(',')[1],
+          data: result.split(',')[1] || '',
         });
       };
-      img.src = result;
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  // For standard photos under 4MB (or HEIC/HEIF), send the original file directly
+  const lowerType = (file.type || '').toLowerCase();
+  if (file.size <= 4 * 1024 * 1024 || lowerType.includes('heic') || lowerType.includes('heif')) {
+    return rawFallback();
+  }
+
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = async () => {
+      try {
+        if (typeof img.decode === 'function') {
+          await img.decode().catch(() => {});
+        }
+        const natWidth = img.naturalWidth || img.width;
+        const natHeight = img.naturalHeight || img.height;
+        if (!natWidth || !natHeight) {
+          URL.revokeObjectURL(objectUrl);
+          resolve(await rawFallback());
+          return;
+        }
+        const MAX_DIM = 1600;
+        let width = natWidth;
+        let height = natHeight;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width >= height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          resolve(await rawFallback());
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Verify canvas actually rendered non-blank pixels
+        const sample = ctx.getImageData(
+          Math.floor(width / 2),
+          Math.floor(height / 2),
+          1,
+          1
+        ).data;
+        const cornerSample = ctx.getImageData(
+          Math.floor(width / 4),
+          Math.floor(height / 4),
+          1,
+          1
+        ).data;
+        const isAllZero =
+          sample[0] === 0 &&
+          sample[1] === 0 &&
+          sample[2] === 0 &&
+          cornerSample[0] === 0 &&
+          cornerSample[1] === 0 &&
+          cornerSample[2] === 0;
+
+        if (isAllZero) {
+          URL.revokeObjectURL(objectUrl);
+          resolve(await rawFallback());
+          return;
+        }
+
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        const base64 = compressedDataUrl.split(',')[1] || '';
+        URL.revokeObjectURL(objectUrl);
+        if (base64.length < 4000) {
+          resolve(await rawFallback());
+          return;
+        }
+        resolve({
+          mimeType: 'image/jpeg',
+          data: base64,
+        });
+      } catch {
+        URL.revokeObjectURL(objectUrl);
+        resolve(await rawFallback());
+      }
     };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+    img.onerror = async () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(await rawFallback());
+    };
+    img.src = objectUrl;
   });
 }
 
@@ -188,21 +273,27 @@ export async function analyzePhotoWithGemini(
   }
 
   const { mimeType, data: base64Data } = await fileToBase64(file);
+  sendScanDebug({
+    step: 'image_prepared',
+    mode,
+    originalName: file.name,
+    originalSize: file.size,
+    originalType: file.type,
+    mimeType,
+    base64Length: base64Data.length,
+  });
 
-  let prompt = '';
-  if (mode === 'cabinet') {
-    prompt = `Analyze this photo of a kitchen pantry or spice cabinet. Identify all visible spices, herbs, broth concentrates, sauces, oils, vinegars, and pantry staples.
-Return ONLY a valid JSON array of objects with keys: "name" (clean English name, e.g. "Garlic Powder", "Smoked Paprika") and "category" (strictly one of: "Spices", "Sauces", "Broth Concentrates", "Oils & Vinegars", "Pantry").
-Do not include markdown code block quotes, just the raw JSON array.`;
-  } else if (mode === 'freezer') {
-    prompt = `Analyze this photo of a kitchen freezer or deep freezer chest. Identify all visible frozen proteins, meats (chicken breasts, ground beef, pork chops, bacon, steaks), frozen seafood, frozen vegetables, and batch-cooked staples.
-Return ONLY a valid JSON array of objects with keys: "name" (clean ingredient name, e.g. "Chicken Breasts", "Ground Beef", "Frozen Broccoli") and "category" ("Freezer & Deep Freeze").
-Do not include markdown code block quotes, just the raw JSON array.`;
-  } else {
-    prompt = `Analyze this photo of a refrigerator or fresh produce drawer. Identify all visible fresh ingredients, proteins, produce, dairy, and opened food items.
-Return ONLY a valid JSON array of objects with keys: "name" (clean ingredient name, e.g. "Chicken Breast", "Broccoli Florets", "Sour Cream") and "category" ("Refrigerator").
-Do not include markdown code block quotes, just the raw JSON array.`;
-  }
+  const prompt = `Analyze this kitchen photo (such as a spice drawer, spice rack, pantry shelf, refrigerator, or freezer).
+Carefully identify EVERY visible spice jar, herb, seasoning blend, bottle, sauce, oil, vinegar, pantry staple, produce item, or protein.
+- Even if a jar is lying flat in a drawer, angled, or only shows a partial label (e.g. "GARL...", "PAPRIKA", "CUMIN", "OREG...", "CINN...") or visual contents through glass (e.g. red pepper flakes, black peppercorns, bay leaves, sesame seeds, dried herbs, garlic powder), include your best identification of the ingredient.
+- For each detected item, provide:
+  "name": clean common kitchen name (e.g. "Garlic Powder", "Smoked Paprika", "Ground Cumin", "Italian Seasoning", "Kosher Salt")
+  "category": one of "Spices", "Sauces", "Broth Concentrates", "Oils & Vinegars", "Pantry", "Refrigerator", or "Freezer & Deep Freeze" (default to "${
+    mode === 'cabinet' ? 'Spices' : mode === 'freezer' ? 'Freezer & Deep Freeze' : 'Refrigerator'
+  }" when unsure).
+
+Return ONLY a JSON array of objects, for example:
+[{"name": "Garlic Powder", "category": "Spices"}, {"name": "Smoked Paprika", "category": "Spices"}]`;
 
   let lastError: any = null;
 
@@ -225,25 +316,74 @@ Do not include markdown code block quotes, just the raw JSON array.`;
           },
         ],
         generationConfig: {
-          temperature: 0.1,
+          temperature: 0.2,
           maxOutputTokens: 8192,
         },
       });
       const rawText = extractModelText(json);
+      sendScanDebug({
+        step: 'model_response',
+        model,
+        finishReason: json?.candidates?.[0]?.finishReason,
+        rawTextPreview: rawText.slice(0, 600),
+      });
       const parsed = parseJsonArrayFromText(rawText);
-      if (Array.isArray(parsed)) {
-        return parsed.map((item: any) => ({
-          name: String(item.name || '').trim(),
-          category: normalizeCategory(item.category),
-        })).filter((item: any) => item.name.length > 0);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const mapped = parsed
+          .map((item: any) => {
+            if (typeof item === 'string') {
+              return {
+                name: item.trim(),
+                category:
+                  mode === 'cabinet'
+                    ? ('Spices' as CabinetItem['category'])
+                    : mode === 'freezer'
+                    ? ('Freezer & Deep Freeze' as CabinetItem['category'])
+                    : ('Refrigerator' as CabinetItem['category']),
+              };
+            }
+            const rawName =
+              item?.name ||
+              item?.ingredient ||
+              item?.item ||
+              item?.spice ||
+              item?.title ||
+              item?.label ||
+              '';
+            return {
+              name: String(rawName).trim(),
+              category: normalizeCategory(
+                item?.category ||
+                  (mode === 'cabinet'
+                    ? 'Spices'
+                    : mode === 'freezer'
+                    ? 'Freezer & Deep Freeze'
+                    : 'Refrigerator')
+              ),
+            };
+          })
+          .filter((item: any) => item.name.length > 0);
+
+        if (mapped.length > 0) {
+          sendScanDebug({ step: 'mapped_success', model, count: mapped.length });
+          return mapped;
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       lastError = err;
+      sendScanDebug({
+        step: 'model_error',
+        model,
+        error: err?.message || String(err),
+      });
       // Try next model fallback
     }
   }
 
-  throw lastError || new Error('Failed to analyze photo with Gemini');
+  if (lastError) {
+    throw lastError;
+  }
+  return [];
 }
 
 /**
