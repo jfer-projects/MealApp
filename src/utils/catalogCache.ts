@@ -3,7 +3,77 @@ import { Recipe } from '../types/freshdiy';
 const DB_NAME = 'freshdiy_catalog_cache_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'catalog_store';
-const CACHE_KEY = 'hellofresh_recipes_v1';
+const CACHE_KEY = 'hellofresh_recipes_v2';
+
+/**
+ * Computes accurate tags strictly supported by the recipe's own data
+ * (prep_time, title/subtitle, ingredients, and instruction overrides).
+ */
+export function computeAccurateRecipeTags(recipe: Recipe): string[] {
+  const tags: string[] = [];
+  const titleSub = `${recipe.title || ''} ${recipe.subtitle || ''}`;
+  const ingText = (recipe.ingredients_json || []).map((i) => i.name).join(' ');
+  const stepsText = (recipe.instructions_json || []).map((s) => s.body).join(' ');
+
+  // 1. Under 30 Mins: strictly under 30 minutes (e.g. 10, 15, 20, 25 mins)
+  if (typeof recipe.prep_time === 'number' && recipe.prep_time > 0 && recipe.prep_time < 30) {
+    tags.push('Under 30 Mins');
+  }
+
+  // 2. Sheet Pan: explicitly a sheet-pan bake or roasted entirely on a baking sheet without pots/skillets
+  const isSheetPan =
+    /\bsheet[- ]pan\b/i.test(titleSub) ||
+    (/\bbaking sheet\b/i.test(stepsText) && !/\b(?:skillet|pot|saucepan|frying pan)\b/i.test(stepsText));
+  if (isSheetPan) {
+    tags.push('Sheet Pan');
+  }
+
+  // 3. Air Fryer: has air fryer step adaptation AND features crispy/roasted items suited to air frying
+  const hasAirFryerStep = (recipe.instructions_json || []).some((s) =>
+    Boolean(s.appliance_override?.air_fryer)
+  );
+  if (
+    hasAirFryerStep &&
+    /\b(?:crispy|wedge|fries|cutlet|tender|nugget|taquito|flauta|tostada|panko|breaded)\b/i.test(
+      `${titleSub} ${ingText}`
+    )
+  ) {
+    tags.push('Air Fryer');
+  }
+
+  // 4. Rice Cooker: has rice cooker adaptation AND actual rice grain ingredient
+  const hasRiceCookerStep = (recipe.instructions_json || []).some((s) =>
+    Boolean(s.appliance_override?.rice_cooker)
+  );
+  const hasRiceGrain = (recipe.ingredients_json || []).some(
+    (i) => /\brice\b/i.test(i.name) && !/\b(?:vinegar|wine|noodle|paper)\b/i.test(i.name)
+  );
+  if (hasRiceCookerStep && hasRiceGrain) {
+    tags.push('Rice Cooker');
+  }
+
+  // 5. Kid-Friendly: classic kid-loved format AND free of spicy peppers/sauces
+  const isKidFormat =
+    /\b(?:burger|mac\s*(?:and|&|'n'|’n’)\s*cheese|quesadilla|flatbread|meatball|meatloaf|tender|nugget|spaghetti|penne|casserole|melt|pizza|slider|grilled cheese|taquito)\b/i.test(
+      recipe.title
+    );
+  const hasSpicyHeat =
+    /\b(?:jalape[ñn]o|poblano|sriracha|harissa|chipotle|chili flakes|red pepper flakes|thai chili|spicy|firecracker|buffalo|gochujang|habanero|cayenne|blackening)\b/i.test(
+      `${titleSub} ${ingText}`
+    );
+  if (isKidFormat && !hasSpicyHeat) {
+    tags.push('Kid-Friendly');
+  }
+
+  return tags;
+}
+
+export function normalizeCatalogRecipes(recipes: Recipe[]): Recipe[] {
+  return recipes.map((r) => ({
+    ...r,
+    tags: computeAccurateRecipeTags(r),
+  }));
+}
 
 function openCacheDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -67,13 +137,14 @@ async function setCachedRecipes(recipes: Recipe[]): Promise<void> {
 export async function loadBaseCatalogFast(): Promise<Recipe[]> {
   const cached = await getCachedRecipes();
   if (cached && cached.length > 0) {
-    return cached;
+    return normalizeCatalogRecipes(cached);
   }
 
   const res = await fetch('/data/hellofresh_recipes.json');
   const fresh: Recipe[] = await res.json();
-  if (Array.isArray(fresh) && fresh.length > 0) {
-    setCachedRecipes(fresh).catch(() => {});
+  const normalized = Array.isArray(fresh) ? normalizeCatalogRecipes(fresh) : [];
+  if (normalized.length > 0) {
+    setCachedRecipes(normalized).catch(() => {});
   }
-  return fresh;
+  return normalized;
 }
