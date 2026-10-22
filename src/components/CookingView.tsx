@@ -312,9 +312,11 @@ export const CookingView: React.FC<CookingViewProps> = ({
             className="w-full h-full object-cover"
           />
           <div className="absolute top-3 left-3 flex gap-2">
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-violet-600 text-white shadow-xs">
-              Version v{recipe.version}
-            </span>
+            {recipe.version > 1 && (
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-violet-600 text-white shadow-xs">
+                Version v{recipe.version}
+              </span>
+            )}
             {isDairyFree && (
               <span className="px-3 py-1 rounded-full text-xs font-bold bg-teal-600 text-white shadow-xs">
                 🌱 Dairy-Free Active

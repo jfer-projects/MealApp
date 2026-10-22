@@ -754,15 +754,17 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
               );
             })}
 
-            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 ml-2 cursor-pointer select-none shrink-0">
-              <input
-                type="checkbox"
-                checked={showAllVersions}
-                onChange={(e) => setShowAllVersions(e.target.checked)}
-                className="rounded border-slate-300 text-emerald-600"
-              />
-              v1 History
-            </label>
+            {recipes.some((r) => r.version > 1) && (
+              <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 ml-2 cursor-pointer select-none shrink-0">
+                <input
+                  type="checkbox"
+                  checked={showAllVersions}
+                  onChange={(e) => setShowAllVersions(e.target.checked)}
+                  className="rounded border-slate-300 text-emerald-600"
+                />
+                Show Earlier Versions
+              </label>
+            )}
           </div>
         </div>
 
