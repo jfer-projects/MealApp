@@ -506,7 +506,7 @@ export async function suggestMacroMealsWithGemini(params: {
   const prompt = `You are an elite sports nutritionist and Michelin-trained meal-prep chef.
 A user has specific nutritional macro targets and wants 3 distinct, delicious dinner ideas that MAXIMIZE the use of ingredients already in their house to eliminate extra grocery cost and waste.
 
-TARGET MACROS (per serving):
+TARGET MACROS (per meal or daily meal-prep plan):
 - Target Calories: ~${macroGoals.calories} kcal
 - Target Protein: >= ${macroGoals.proteinGrams}g
 - Target Net Carbs: ~${macroGoals.carbsGrams}g
@@ -518,6 +518,9 @@ TARGET MACROS (per serving):
       ? 'DAIRY-FREE ACTIVE (Do not use cow milk, butter, or standard dairy cheese - use plant butter, oat milk, or olive oil)'
       : 'None'
   }
+
+NOTE ON HIGH ATHLETE / BULKING TARGETS:
+If the user specified high athlete, mass-builder, or strongman targets (e.g. 2,000–6,000+ calories, 150–350+g protein, 400–800+g carbs), generate high-yield, high-density power meals or meal-prep batches with hearty portions of protein and clean carbohydrates that directly satisfy these ambitious goals. Provide realistic nutrition calculations matching the target!
 
 INGREDIENTS CURRENTLY AVAILABLE AT HOME:
 - Deep Freezer / Freezer: ${onHandItems.freezer.length > 0 ? onHandItems.freezer.join(', ') : 'None specified'}

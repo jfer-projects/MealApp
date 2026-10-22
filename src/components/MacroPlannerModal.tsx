@@ -125,6 +125,19 @@ const PRESET_GOALS: {
       dietStyle: 'lean_bulk',
     },
   },
+  {
+    id: 'lean_bulk',
+    label: 'Athlete / Mass Monster',
+    desc: 'Heavy training & bulking with 4,500+ kcal & high protein',
+    icon: '⚡',
+    goals: {
+      calories: 4500,
+      proteinGrams: 280,
+      carbsGrams: 550,
+      fatGrams: 130,
+      dietStyle: 'lean_bulk',
+    },
+  },
 ];
 
 export const MacroPlannerModal: React.FC<MacroPlannerModalProps> = ({
@@ -401,7 +414,7 @@ export const MacroPlannerModal: React.FC<MacroPlannerModalProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                 <Scale className="w-3.5 h-3.5 text-emerald-600" />
-                2. Fine-Tune Targets (Per Serving)
+                2. Target Macros (Type or Slide)
               </label>
               <div className="text-xs font-bold text-slate-600">
                 Serving: <span className="text-emerald-700 font-black">{defaultServings} People</span>
@@ -430,15 +443,15 @@ export const MacroPlannerModal: React.FC<MacroPlannerModalProps> = ({
               <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 px-0.5">
                 <span className="flex items-center gap-1 text-red-600">
                   <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
-                  Protein {proteinPct}%
+                  Protein {proteinPct}% ({proteinCals} kcal)
                 </span>
                 <span className="flex items-center gap-1 text-amber-700">
                   <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-                  Carbs {carbPct}%
+                  Carbs {carbPct}% ({carbCals} kcal)
                 </span>
                 <span className="flex items-center gap-1 text-blue-600">
                   <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
-                  Fat {fatPct}%
+                  Fat {fatPct}% ({fatCals} kcal)
                 </span>
               </div>
             </div>
@@ -446,20 +459,38 @@ export const MacroPlannerModal: React.FC<MacroPlannerModalProps> = ({
             {/* Sliders Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
               {/* Calories */}
-              <div className="space-y-1">
+              <div className="space-y-1.5 bg-slate-50/70 p-3 rounded-xl border border-slate-200/80">
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-slate-700 flex items-center gap-1">
                     <Flame className="w-3.5 h-3.5 text-orange-500" />
-                    Calories Target
+                    Calories
                   </span>
-                  <span className="text-slate-900 font-black">{goals.calories} kcal</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="200"
+                      max="12000"
+                      step="25"
+                      value={goals.calories || ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setGoals((prev) => ({
+                          ...prev,
+                          calories: isNaN(val) ? 0 : Math.max(0, val),
+                          dietStyle: undefined,
+                        }));
+                      }}
+                      className="w-20 px-2 py-0.5 text-right font-black text-slate-900 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-xs shadow-2xs"
+                    />
+                    <span className="text-[11px] font-bold text-slate-500">kcal</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min="350"
-                  max="1100"
-                  step="25"
-                  value={goals.calories}
+                  min="200"
+                  max="10000"
+                  step="50"
+                  value={Math.min(10000, Math.max(200, goals.calories || 200))}
                   onChange={(e) =>
                     setGoals((prev) => ({
                       ...prev,
@@ -469,23 +500,47 @@ export const MacroPlannerModal: React.FC<MacroPlannerModalProps> = ({
                   }
                   className="w-full accent-orange-500 cursor-pointer"
                 />
+                <div className="flex justify-between text-[10px] text-slate-400 font-semibold px-0.5">
+                  <span>200</span>
+                  <span>3,000</span>
+                  <span>6,000</span>
+                  <span>10,000+</span>
+                </div>
               </div>
 
               {/* Protein */}
-              <div className="space-y-1">
+              <div className="space-y-1.5 bg-slate-50/70 p-3 rounded-xl border border-slate-200/80">
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-slate-700 flex items-center gap-1">
                     <Dumbbell className="w-3.5 h-3.5 text-red-500" />
                     Protein Target
                   </span>
-                  <span className="text-red-700 font-black">{goals.proteinGrams}g</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="10"
+                      max="600"
+                      step="1"
+                      value={goals.proteinGrams || ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setGoals((prev) => ({
+                          ...prev,
+                          proteinGrams: isNaN(val) ? 0 : Math.max(0, val),
+                          dietStyle: undefined,
+                        }));
+                      }}
+                      className="w-16 px-2 py-0.5 text-right font-black text-red-700 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-xs shadow-2xs"
+                    />
+                    <span className="text-[11px] font-bold text-slate-500">g</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min="20"
-                  max="90"
-                  step="2"
-                  value={goals.proteinGrams}
+                  min="10"
+                  max="500"
+                  step="5"
+                  value={Math.min(500, Math.max(10, goals.proteinGrams || 10))}
                   onChange={(e) =>
                     setGoals((prev) => ({
                       ...prev,
@@ -495,23 +550,47 @@ export const MacroPlannerModal: React.FC<MacroPlannerModalProps> = ({
                   }
                   className="w-full accent-red-500 cursor-pointer"
                 />
+                <div className="flex justify-between text-[10px] text-slate-400 font-semibold px-0.5">
+                  <span>10g</span>
+                  <span>175g</span>
+                  <span>350g</span>
+                  <span>500g+</span>
+                </div>
               </div>
 
               {/* Carbs */}
-              <div className="space-y-1">
+              <div className="space-y-1.5 bg-slate-50/70 p-3 rounded-xl border border-slate-200/80">
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-slate-700 flex items-center gap-1">
                     <Wheat className="w-3.5 h-3.5 text-amber-500" />
                     Carbohydrates
                   </span>
-                  <span className="text-amber-800 font-black">{goals.carbsGrams}g</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1500"
+                      step="1"
+                      value={goals.carbsGrams ?? ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setGoals((prev) => ({
+                          ...prev,
+                          carbsGrams: isNaN(val) ? 0 : Math.max(0, val),
+                          dietStyle: undefined,
+                        }));
+                      }}
+                      className="w-16 px-2 py-0.5 text-right font-black text-amber-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs shadow-2xs"
+                    />
+                    <span className="text-[11px] font-bold text-slate-500">g</span>
+                  </div>
                 </div>
                 <input
                   type="range"
-                  min="5"
-                  max="130"
+                  min="0"
+                  max="1200"
                   step="5"
-                  value={goals.carbsGrams}
+                  value={Math.min(1200, Math.max(0, goals.carbsGrams || 0))}
                   onChange={(e) =>
                     setGoals((prev) => ({
                       ...prev,
@@ -521,23 +600,47 @@ export const MacroPlannerModal: React.FC<MacroPlannerModalProps> = ({
                   }
                   className="w-full accent-amber-500 cursor-pointer"
                 />
+                <div className="flex justify-between text-[10px] text-slate-400 font-semibold px-0.5">
+                  <span>0g</span>
+                  <span>400g</span>
+                  <span>800g</span>
+                  <span>1,200g+</span>
+                </div>
               </div>
 
               {/* Fat */}
-              <div className="space-y-1">
+              <div className="space-y-1.5 bg-slate-50/70 p-3 rounded-xl border border-slate-200/80">
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-slate-700 flex items-center gap-1">
                     <Zap className="w-3.5 h-3.5 text-blue-500" />
                     Healthy Fat
                   </span>
-                  <span className="text-blue-700 font-black">{goals.fatGrams}g</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="5"
+                      max="500"
+                      step="1"
+                      value={goals.fatGrams || ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setGoals((prev) => ({
+                          ...prev,
+                          fatGrams: isNaN(val) ? 0 : Math.max(0, val),
+                          dietStyle: undefined,
+                        }));
+                      }}
+                      className="w-16 px-2 py-0.5 text-right font-black text-blue-700 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs shadow-2xs"
+                    />
+                    <span className="text-[11px] font-bold text-slate-500">g</span>
+                  </div>
                 </div>
                 <input
                   type="range"
                   min="5"
-                  max="60"
-                  step="2"
-                  value={goals.fatGrams}
+                  max="400"
+                  step="5"
+                  value={Math.min(400, Math.max(5, goals.fatGrams || 5))}
                   onChange={(e) =>
                     setGoals((prev) => ({
                       ...prev,
@@ -547,6 +650,12 @@ export const MacroPlannerModal: React.FC<MacroPlannerModalProps> = ({
                   }
                   className="w-full accent-blue-500 cursor-pointer"
                 />
+                <div className="flex justify-between text-[10px] text-slate-400 font-semibold px-0.5">
+                  <span>5g</span>
+                  <span>120g</span>
+                  <span>250g</span>
+                  <span>400g+</span>
+                </div>
               </div>
             </div>
 

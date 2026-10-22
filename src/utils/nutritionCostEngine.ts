@@ -336,7 +336,11 @@ export function suggestMacroMealsFallback(params: {
         macroHighlights: [
           `${nut.proteinGrams}g Protein`,
           `${nut.calories} kcal`,
-          fromHome.length > 0 ? `${fromHome.length} ingredients at home` : 'Quick Prep',
+          macroGoals.calories > 1500
+            ? `Scale to ${Math.max(2, Math.round(macroGoals.calories / Math.max(1, nut.calories)))}x portions for ${macroGoals.calories} kcal target`
+            : fromHome.length > 0
+            ? `${fromHome.length} ingredients at home`
+            : 'Quick Prep',
         ],
         ingredientsFromHome: fromHome,
         ingredientsToBuy: toBuy,
