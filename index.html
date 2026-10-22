@@ -16,6 +16,9 @@
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased selection:bg-emerald-500 selection:text-white">
     <div id="root"></div>
+    <!-- Pre-occupy Netlify HUD / badge IDs so /.netlify/scripts/hud exits immediately without mounting an iframe over the mobile bottom nav -->
+    <div id="nl-badge-frame" hidden aria-hidden="true" style="display:none!important"></div>
+    <div id="nl-hud-frame" hidden aria-hidden="true" style="display:none!important"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
       if ('serviceWorker' in navigator) {
@@ -23,16 +26,17 @@
           navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration error:', err));
         });
       }
-      // Remove any injected third-party floating badge that overlaps the mobile bottom bar
+      // Prevent & remove any injected third-party floating HUD/badge that overlaps the mobile bottom bar
       (function () {
+        try {
+          localStorage.setItem('nl-hud:owner-private:v1', 'hidden');
+          localStorage.setItem('nl-hud:public:v1', 'hidden:' + (Date.now() + 5 * 24 * 60 * 60 * 1000));
+        } catch (e) {}
+
         function removeFloatingBadges() {
-          document.querySelectorAll('body > a[href*="netlify"], body > div:not(#root)').forEach((el) => {
-            const text = (el.textContent || '').toLowerCase();
-            const html = (el.innerHTML || '').toLowerCase();
-            if (text.includes('netlify') || html.includes('netlify.com')) {
-              el.remove();
-            }
-          });
+          document.querySelectorAll(
+            'iframe#nl-badge-frame, iframe#nl-hud-frame, script[data-nf-variant], script[src*=".netlify/scripts"], body > a[href*="netlify"]'
+          ).forEach((el) => el.remove());
         }
         removeFloatingBadges();
         const obs = new MutationObserver(removeFloatingBadges);

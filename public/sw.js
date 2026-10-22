@@ -1,4 +1,4 @@
-const CACHE_NAME = 'freshdiy-cache-v2';
+const CACHE_NAME = 'freshdiy-cache-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -27,6 +27,17 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
+
+  // Block injected hosting HUD scripts so they never cover the mobile bottom navigation bar
+  if (url.pathname.startsWith('/.netlify/scripts/')) {
+    event.respondWith(
+      new Response('/* suppressed */', {
+        status: 200,
+        headers: { 'Content-Type': 'application/javascript' }
+      })
+    );
+    return;
+  }
 
   // Stale-while-revalidate for the static recipe catalog JSON so mobile loads instantly after first visit
   if (url.pathname.endsWith('/data/hellofresh_recipes.json')) {

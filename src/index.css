@@ -10,8 +10,12 @@
   }
 }
 
-/* Prevent any injected hosting badges (e.g., Powered by Netlify) from covering the mobile bottom navigation bar */
-a[href*="netlify.com"][ target="_blank"],
+/* Prevent any injected hosting badges (e.g., Powered by Netlify HUD iframe) from covering the mobile bottom navigation bar */
+#nl-badge-frame,
+#nl-hud-frame,
+iframe#nl-badge-frame,
+iframe#nl-hud-frame,
+a[href*="netlify.com"][target="_blank"],
 a[href*="utm_source=netlify"],
 div:has(> a[href*="netlify.com"]),
 [id*="netlify-badge"],
@@ -19,5 +23,8 @@ div:has(> a[href*="netlify.com"]),
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
   opacity: 0 !important;
+  z-index: -9999 !important;
 }
