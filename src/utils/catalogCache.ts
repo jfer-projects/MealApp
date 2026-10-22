@@ -3,7 +3,19 @@ import { Recipe } from '../types/freshdiy';
 const DB_NAME = 'freshdiy_catalog_cache_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'catalog_store';
-const CACHE_KEY = 'hellofresh_recipes_v2';
+const CACHE_KEY = 'hellofresh_recipes_v3';
+
+/**
+ * Strips leading HelloFresh upsell bracket text such as
+ * "[UPGRADE CHICKEN CUTLETS TO DOUBLE ORGANIC CHICKEN CUTLETS] Sheet Pan..."
+ */
+export function cleanRecipeTitle(title: string): string {
+  if (!title) return title;
+  return title
+    .replace(/^\s*(?:\[[^\]]*\]\s*)+/g, '')
+    .replace(/\s*\[(?:upgrade|swap|add|double)[^\]]*\]/gi, '')
+    .trim();
+}
 
 /**
  * Computes accurate tags strictly supported by the recipe's own data
@@ -69,10 +81,17 @@ export function computeAccurateRecipeTags(recipe: Recipe): string[] {
 }
 
 export function normalizeCatalogRecipes(recipes: Recipe[]): Recipe[] {
-  return recipes.map((r) => ({
-    ...r,
-    tags: computeAccurateRecipeTags(r),
-  }));
+  return recipes.map((r) => {
+    const cleanedTitle = cleanRecipeTitle(r.title);
+    const cleaned = {
+      ...r,
+      title: cleanedTitle,
+    };
+    return {
+      ...cleaned,
+      tags: computeAccurateRecipeTags(cleaned),
+    };
+  });
 }
 
 function openCacheDb(): Promise<IDBDatabase> {
