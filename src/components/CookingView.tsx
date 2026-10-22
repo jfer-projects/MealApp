@@ -268,7 +268,7 @@ export const CookingView: React.FC<CookingViewProps> = ({
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition cursor-pointer"
           >
             <ShoppingCart className="w-4 h-4" />
-            + Add Recipe ({servings}p) to Grocery List
+            <span>Add Recipe to Grocery List</span>
           </button>
 
           {/* Version Switcher */}

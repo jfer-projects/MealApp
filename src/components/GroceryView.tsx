@@ -1119,6 +1119,9 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-slate-500">
+                      Serves
+                    </span>
                     {([2, 4, 6] as ServingsSize[]).map((s) => (
                       <button
                         key={s}
@@ -1129,7 +1132,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                             : 'bg-white border border-slate-200 text-slate-600'
                         }`}
                       >
-                        {s}p
+                        {s}
                       </button>
                     ))}
                     <button

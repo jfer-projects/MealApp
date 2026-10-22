@@ -326,8 +326,8 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
             <div className="flex items-center gap-1.5">
               {/* Global Serving Size Selector */}
               <div className="flex items-center bg-slate-100 rounded-xl p-0.5 border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-500 pl-2 pr-1 hidden sm:inline">
-                  Servings:
+                <span className="text-[10px] font-bold text-slate-600 pl-2 pr-1">
+                  Serves
                 </span>
                 {([2, 4, 6] as ServingsSize[]).map((size) => (
                   <button
@@ -338,9 +338,9 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                         ? 'bg-emerald-600 text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
-                    title={`${size} Servings`}
+                    title={`Serves ${size}`}
                   >
-                    {size}p
+                    {size}
                   </button>
                 ))}
               </div>
@@ -465,6 +465,9 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
               )}
 
               <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-500 pl-1.5 pr-1">
+                  Serves
+                </span>
                 {([2, 4, 6] as ServingsSize[]).map((s) => (
                   <button
                     key={s}
@@ -475,7 +478,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                         : 'text-slate-600'
                     }`}
                   >
-                    {s}p
+                    {s}
                   </button>
                 ))}
               </div>
