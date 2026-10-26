@@ -141,6 +141,28 @@ export function ingredientMatchesTerm(ingName: string, term: string): boolean {
     return false;
   }
 
+  // Collision guard 6: "butter" vs "butternut squash", "butter lettuce", "butter beans", or nut butters
+  const isButterTerm = (s: string) => /^(?:salted\s+|unsalted\s+|plant-based\s+|plant\s+|dairy-free\s+)?butter$/i.test(s);
+  if (isButterTerm(aRaw) || isButterTerm(bRaw)) {
+    const other = isButterTerm(aRaw) ? bRaw : aRaw;
+    if (/\b(?:butternut|squash|lettuce|beans?|peanut|almond|cashew|sunflower|sunbutter|apple|cocoa)\b/i.test(other)) {
+      return false;
+    }
+  }
+
+  // Collision guard 7: "cream" / "heavy cream" vs "ice cream", "cream cheese", "sour cream"
+  if (aRaw === 'cream' || bRaw === 'cream' || aRaw === 'heavy cream' || bRaw === 'heavy cream') {
+    const other = (aRaw === 'cream' || aRaw === 'heavy cream') ? bRaw : aRaw;
+    if (/\b(?:ice cream|cream cheese|sour cream|cream of tartar)\b/i.test(other)) {
+      return false;
+    }
+  }
+
+  // Collision guard 8: "corn" vs "cornstarch" or "cornmeal"
+  if ((aRaw === 'corn' || bRaw === 'corn') && (aRaw.includes('starch') || bRaw.includes('starch') || aRaw.includes('meal') || bRaw.includes('meal'))) {
+    return false;
+  }
+
   const a = normalizeStem(aRaw);
   const b = normalizeStem(bRaw);
   if (a === b) return true;

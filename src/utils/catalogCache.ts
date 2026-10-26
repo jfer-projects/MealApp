@@ -3,7 +3,7 @@ import { Recipe } from '../types/freshdiy';
 const DB_NAME = 'freshdiy_catalog_cache_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'catalog_store';
-const CACHE_KEY = 'hellofresh_recipes_v3';
+const CACHE_KEY = 'hellofresh_recipes_v4';
 
 /**
  * Strips leading HelloFresh upsell bracket text such as
@@ -156,7 +156,8 @@ async function setCachedRecipes(recipes: Recipe[]): Promise<void> {
 export async function loadBaseCatalogFast(): Promise<Recipe[]> {
   const cached = await getCachedRecipes();
   if (cached && cached.length > 0) {
-    return normalizeCatalogRecipes(cached);
+    // Return cached items directly without re-computing tags on every startup
+    return cached;
   }
 
   const res = await fetch('/data/hellofresh_recipes.json');

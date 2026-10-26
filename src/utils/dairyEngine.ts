@@ -179,11 +179,28 @@ export function formatIngredientDisplay(amount: number, unit: string, name: stri
   if (u === 'to taste' || u === 'as needed') {
     return `${name} (${u})`;
   }
+
+  // Countable / produce scaling polish (e.g. 1.5 limes -> 1–2 Limes, 0.75 yellow onion -> 1 Yellow Onion)
+  const isCountable = !u || u === 'unit' || u === 'units' || u === 'item' || u === 'items' || u === 'piece' || u === 'pieces';
+  const isIndivisible = /\b(lime|lemon|egg|avocado|onion|shallot|bell pepper|poblano|jalape[ñn]o|cucumber|apple|banana|potato|bun|tortilla|flatbread|pita)\b/i.test(name);
+
+  if (isCountable && isIndivisible && !Number.isInteger(amount) && amount > 0) {
+    const floorVal = Math.floor(amount);
+    const ceilVal = Math.ceil(amount);
+    const amtStr = floorVal === 0 ? '1' : `${floorVal}–${ceilVal}`;
+    const cleanName = pluralizeCountableIngredientName(name, ceilVal);
+    return `${amtStr} ${cleanName}`.trim();
+  }
+
+  const cleanName = (isCountable && isIndivisible && amount > 1)
+    ? pluralizeCountableIngredientName(name, amount)
+    : name;
+
   const amtStr = formatAmount(amount);
   if (!u) {
-    return [amtStr, name].filter(Boolean).join(' ');
+    return [amtStr, cleanName].filter(Boolean).join(' ');
   }
-  return [amtStr, u, name].filter(Boolean).join(' ');
+  return [amtStr, u, cleanName].filter(Boolean).join(' ');
 }
 
 export function normalizeUnitAndAmount(

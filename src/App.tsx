@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
   Camera,
@@ -14,14 +14,24 @@ import {
   Users,
 } from 'lucide-react';
 import { AuthScreen } from './components/AuthScreen';
-import { BlendRecipeModal } from './components/BlendRecipeModal';
 import { CabinetView } from './components/CabinetView';
 import { CatalogPlannerView } from './components/CatalogPlannerView';
 import { CookingView } from './components/CookingView';
-import { FamilySettingsModal } from './components/FamilySettingsModal';
 import { GroceryView } from './components/GroceryView';
-import { MacroPlannerModal } from './components/MacroPlannerModal';
-import { PhotoScannerModal } from './components/PhotoScannerModal';
+
+// Code-split heavy modal views with dynamic imports
+const BlendRecipeModal = React.lazy(() =>
+  import('./components/BlendRecipeModal').then((m) => ({ default: m.BlendRecipeModal }))
+);
+const FamilySettingsModal = React.lazy(() =>
+  import('./components/FamilySettingsModal').then((m) => ({ default: m.FamilySettingsModal }))
+);
+const MacroPlannerModal = React.lazy(() =>
+  import('./components/MacroPlannerModal').then((m) => ({ default: m.MacroPlannerModal }))
+);
+const PhotoScannerModal = React.lazy(() =>
+  import('./components/PhotoScannerModal').then((m) => ({ default: m.PhotoScannerModal }))
+);
 import { fetchUserProfile, getHouseholdMembers } from './lib/authService';
 import {
   checkSupabaseTablesReady,
@@ -2046,162 +2056,178 @@ export const App: React.FC = () => {
       </nav>
 
       {/* Clickable DIY Blend & Sauce Modal */}
-      <BlendRecipeModal
-        blendName={activeBlendModal}
-        cabinet={cabinet}
-        onClose={() => setActiveBlendModal(null)}
-        onAddExtraToGrocery={async (itemName, aisle) => {
-          const newEx: GroceryExtra = {
-            id: generateUuid(),
-            week_start_date: activeWeekStartDate,
-            item_name: itemName,
-            aisle,
-            checked: false,
-          };
-          setExtras((prev) => [...prev, newEx]);
-          if (supaStatus.tablesReady) {
-            const payload: any = {
-              id: newEx.id,
-              week_start_date: activeWeekStartDate,
-              item_name: itemName,
-              aisle,
-              checked: false,
-            };
-            if (currentUser?.household?.id) payload.household_id = currentUser.household.id;
-            if (currentUser?.id) payload.user_id = currentUser.id;
-            await supabase.from('grocery_extras').insert(payload);
-          }
-          showToast(`🛒 Added ${itemName} to your Grocery List!`);
-        }}
-      />
+      {Boolean(activeBlendModal) && (
+        <Suspense fallback={null}>
+          <BlendRecipeModal
+            blendName={activeBlendModal}
+            cabinet={cabinet}
+            onClose={() => setActiveBlendModal(null)}
+            onAddExtraToGrocery={async (itemName, aisle) => {
+              const newEx: GroceryExtra = {
+                id: generateUuid(),
+                week_start_date: activeWeekStartDate,
+                item_name: itemName,
+                aisle,
+                checked: false,
+              };
+              setExtras((prev) => [...prev, newEx]);
+              if (supaStatus.tablesReady) {
+                const payload: any = {
+                  id: newEx.id,
+                  week_start_date: activeWeekStartDate,
+                  item_name: itemName,
+                  aisle,
+                  checked: false,
+                };
+                if (currentUser?.household?.id) payload.household_id = currentUser.household.id;
+                if (currentUser?.id) payload.user_id = currentUser.id;
+                await supabase.from('grocery_extras').insert(payload);
+              }
+              showToast(`🛒 Added ${itemName} to your Grocery List!`);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* AI Camera Photo Scanner Modal (Spice Cabinet + Fridge + Deep Freezer) */}
-      <PhotoScannerModal
-        isOpen={photoScannerState.open}
-        initialMode={photoScannerState.mode}
-        geminiApiKey={geminiApiKey}
-        isKeyAuthor={isKeyAuthor}
-        hasFamilyKey={Boolean(geminiApiKey && geminiApiKey.trim())}
-        onUpdateGeminiApiKey={(k) => {
-          const cleanKey = k.trim();
-          setGeminiApiKey(cleanKey);
-          setGeminiKeyAuthorId(currentUser?.id || null);
-          const hId = currentUser?.household?.id;
-          const storageKey = hId
-            ? `freshdiy_gemini_api_key_${hId}`
-            : 'freshdiy_gemini_api_key_v1';
-          if (cleanKey) {
-            localStorage.setItem(storageKey, cleanKey);
-            localStorage.setItem('freshdiy_gemini_api_key_v1', cleanKey);
-            if (currentUser?.id) {
-              localStorage.setItem(`freshdiy_gemini_key_author_${hId || 'default'}`, currentUser.id);
+      {photoScannerState.open && (
+        <Suspense fallback={null}>
+          <PhotoScannerModal
+            isOpen={photoScannerState.open}
+            initialMode={photoScannerState.mode}
+            geminiApiKey={geminiApiKey}
+            isKeyAuthor={isKeyAuthor}
+            hasFamilyKey={Boolean(geminiApiKey && geminiApiKey.trim())}
+            onUpdateGeminiApiKey={(k) => {
+              const cleanKey = k.trim();
+              setGeminiApiKey(cleanKey);
+              setGeminiKeyAuthorId(currentUser?.id || null);
+              const hId = currentUser?.household?.id;
+              const storageKey = hId
+                ? `freshdiy_gemini_api_key_${hId}`
+                : 'freshdiy_gemini_api_key_v1';
+              if (cleanKey) {
+                localStorage.setItem(storageKey, cleanKey);
+                localStorage.setItem('freshdiy_gemini_api_key_v1', cleanKey);
+                if (currentUser?.id) {
+                  localStorage.setItem(`freshdiy_gemini_key_author_${hId || 'default'}`, currentUser.id);
+                }
+              } else {
+                localStorage.removeItem(storageKey);
+                localStorage.removeItem('freshdiy_gemini_api_key_v1');
+              }
+              saveHouseholdSettingsToCloud({
+                householdId: hId || null,
+                userId: currentUser?.id || null,
+                geminiApiKey: cleanKey,
+                geminiKeyAuthorId: cleanKey ? currentUser?.id || null : null,
+                updateApiKey: true,
+              }).catch(() => {});
+            }}
+            onOpenFamilySettings={() => setIsFamilyModalOpen(true)}
+            onClose={() =>
+              setPhotoScannerState((prev) => ({ ...prev, open: false }))
             }
-          } else {
-            localStorage.removeItem(storageKey);
-            localStorage.removeItem('freshdiy_gemini_api_key_v1');
-          }
-          saveHouseholdSettingsToCloud({
-            householdId: hId || null,
-            userId: currentUser?.id || null,
-            geminiApiKey: cleanKey,
-            geminiKeyAuthorId: cleanKey ? currentUser?.id || null : null,
-            updateApiKey: true,
-          }).catch(() => {});
-        }}
-        onOpenFamilySettings={() => setIsFamilyModalOpen(true)}
-        onClose={() =>
-          setPhotoScannerState((prev) => ({ ...prev, open: false }))
-        }
-        onImportToCabinet={(items) => {
-          items.forEach((item) =>
-            handleAddCabinetItem(item.name, item.category, 'in_stock')
-          );
-          showToast(
-            `📸 Auto-imported ${items.length} items into your Household Inventory!`
-          );
-          setActiveTab('cabinet');
-        }}
-        onImportToFridge={(items) => {
-          items.forEach((name) =>
-            handleAddCabinetItem(name, 'Refrigerator', 'in_stock', {
-              fridge_qty: 1,
-              freezer_qty: 0,
-              pantry_qty: 0,
-              unit: 'item',
-            })
-          );
-          setOnHandFridgeItems((prev) => {
-            const merged = Array.from(new Set([...prev, ...items]));
-            localStorage.setItem(
-              STORAGE_KEYS.fridgeItems,
-              JSON.stringify(merged)
-            );
-            return merged;
-          });
-          showToast(
-            `📸 Added ${items.length} scanned Fridge items to your Inventory & Recipe Matcher!`
-          );
-          setActiveTab('catalog');
-        }}
-      />
+            onImportToCabinet={(items) => {
+              items.forEach((item) =>
+                handleAddCabinetItem(item.name, item.category, 'in_stock')
+              );
+              showToast(
+                `📸 Auto-imported ${items.length} items into your Household Inventory!`
+              );
+              setActiveTab('cabinet');
+            }}
+            onImportToFridge={(items) => {
+              items.forEach((name) =>
+                handleAddCabinetItem(name, 'Refrigerator', 'in_stock', {
+                  fridge_qty: 1,
+                  freezer_qty: 0,
+                  pantry_qty: 0,
+                  unit: 'item',
+                })
+              );
+              setOnHandFridgeItems((prev) => {
+                const merged = Array.from(new Set([...prev, ...items]));
+                localStorage.setItem(
+                  STORAGE_KEYS.fridgeItems,
+                  JSON.stringify(merged)
+                );
+                return merged;
+              });
+              showToast(
+                `📸 Added ${items.length} scanned Fridge items to your Inventory & Recipe Matcher!`
+              );
+              setActiveTab('catalog');
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Macro AI Kitchen Planner Modal */}
-      <MacroPlannerModal
-        isOpen={isMacroModalOpen}
-        onClose={() => setIsMacroModalOpen(false)}
-        cabinet={cabinet}
-        onHandFridgeItems={effectiveOnHandFridgeItems}
-        recipes={recipes}
-        isDairyFree={isDairyFree}
-        geminiApiKey={geminiApiKey}
-        defaultServings={defaultServings}
-        initialMacroGoals={macroGoals}
-        onSaveMacroGoals={handleSaveMacroGoals}
-        onAddMacroMealToPlan={handleAddMacroMealToPlan}
-        onOpenFamilySettings={() => setIsFamilyModalOpen(true)}
-      />
+      {isMacroModalOpen && (
+        <Suspense fallback={null}>
+          <MacroPlannerModal
+            isOpen={isMacroModalOpen}
+            onClose={() => setIsMacroModalOpen(false)}
+            cabinet={cabinet}
+            onHandFridgeItems={effectiveOnHandFridgeItems}
+            recipes={recipes}
+            isDairyFree={isDairyFree}
+            geminiApiKey={geminiApiKey}
+            defaultServings={defaultServings}
+            initialMacroGoals={macroGoals}
+            onSaveMacroGoals={handleSaveMacroGoals}
+            onAddMacroMealToPlan={handleAddMacroMealToPlan}
+            onOpenFamilySettings={() => setIsFamilyModalOpen(true)}
+          />
+        </Suspense>
+      )}
 
       {/* Family Settings & Account Modal */}
-      <FamilySettingsModal
-        isOpen={isFamilyModalOpen}
-        onClose={() => setIsFamilyModalOpen(false)}
-        currentUser={currentUser}
-        isDairyFree={isDairyFree}
-        onToggleDairyFree={setIsDairyFree}
-        geminiApiKey={geminiApiKey}
-        isKeyAuthor={isKeyAuthor}
-        onUpdateGeminiApiKey={(k) => {
-          const cleanKey = k.trim();
-          setGeminiApiKey(cleanKey);
-          setGeminiKeyAuthorId(currentUser?.id || null);
-          const hId = currentUser?.household?.id;
-          const storageKey = hId
-            ? `freshdiy_gemini_api_key_${hId}`
-            : 'freshdiy_gemini_api_key_v1';
-          if (cleanKey) {
-            localStorage.setItem(storageKey, cleanKey);
-            localStorage.setItem('freshdiy_gemini_api_key_v1', cleanKey);
-            if (currentUser?.id) {
-              localStorage.setItem(`freshdiy_gemini_key_author_${hId || 'default'}`, currentUser.id);
-            }
-          } else {
-            localStorage.removeItem(storageKey);
-            localStorage.removeItem('freshdiy_gemini_api_key_v1');
-          }
-        }}
-        hellofreshPrice={hellofreshPrice}
-        onUpdateHellofreshPrice={(p) => {
-          setHellofreshPrice(p);
-          localStorage.setItem('freshdiy_hf_price_v1', String(p));
-        }}
-        onProfileUpdated={(updated) => setCurrentUser(updated)}
-        onSignOut={() => {
-          setCurrentUser(null);
-          setGeminiApiKey('');
-          setGeminiKeyAuthorId(null);
-          showToast('Signed out of FreshDIY.');
-        }}
-      />
+      {isFamilyModalOpen && (
+        <Suspense fallback={null}>
+          <FamilySettingsModal
+            isOpen={isFamilyModalOpen}
+            onClose={() => setIsFamilyModalOpen(false)}
+            currentUser={currentUser}
+            isDairyFree={isDairyFree}
+            onToggleDairyFree={setIsDairyFree}
+            geminiApiKey={geminiApiKey}
+            isKeyAuthor={isKeyAuthor}
+            onUpdateGeminiApiKey={(k) => {
+              const cleanKey = k.trim();
+              setGeminiApiKey(cleanKey);
+              setGeminiKeyAuthorId(currentUser?.id || null);
+              const hId = currentUser?.household?.id;
+              const storageKey = hId
+                ? `freshdiy_gemini_api_key_${hId}`
+                : 'freshdiy_gemini_api_key_v1';
+              if (cleanKey) {
+                localStorage.setItem(storageKey, cleanKey);
+                localStorage.setItem('freshdiy_gemini_api_key_v1', cleanKey);
+                if (currentUser?.id) {
+                  localStorage.setItem(`freshdiy_gemini_key_author_${hId || 'default'}`, currentUser.id);
+                }
+              } else {
+                localStorage.removeItem(storageKey);
+                localStorage.removeItem('freshdiy_gemini_api_key_v1');
+              }
+            }}
+            hellofreshPrice={hellofreshPrice}
+            onUpdateHellofreshPrice={(p) => {
+              setHellofreshPrice(p);
+              localStorage.setItem('freshdiy_hf_price_v1', String(p));
+            }}
+            onProfileUpdated={(updated) => setCurrentUser(updated)}
+            onSignOut={() => {
+              setCurrentUser(null);
+              setGeminiApiKey('');
+              setGeminiKeyAuthorId(null);
+              showToast('Signed out of FreshDIY.');
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

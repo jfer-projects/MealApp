@@ -93,6 +93,16 @@ const SUGGESTIONS = {
   ],
 };
 
+function triggerHaptic(durationMs = 12) {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate(durationMs);
+    } catch {
+      // ignore
+    }
+  }
+}
+
 const UNIT_OPTIONS = ['pkg', 'lb', 'item', 'bag', 'box', 'bottle', 'can', 'jar'];
 
 export const CabinetView: React.FC<CabinetViewProps> = ({
@@ -887,7 +897,10 @@ export const CabinetView: React.FC<CabinetViewProps> = ({
                     {qty.freezer > 0 && (
                       <button
                         type="button"
-                        onClick={() => onThawToFridge(item.id)}
+                        onClick={() => {
+                          triggerHaptic(15);
+                          onThawToFridge(item.id);
+                        }}
                         className="w-full py-1.5 px-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-extrabold shadow-2xs flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-99"
                         title="Move 1 from Deep Freezer to Refrigerator on this same card"
                       >

@@ -65,6 +65,16 @@ const AISLE_OPTIONS = [
   'Household & Extras',
 ];
 
+function triggerHaptic(durationMs = 12) {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate(durationMs);
+    } catch {
+      // ignore
+    }
+  }
+}
+
 interface GroceryViewProps {
   weeklyPlan: WeeklyPlanItem[];
   recipes: Recipe[];
@@ -253,6 +263,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
     totalAmount: number;
     unit: string;
   }) => {
+    triggerHaptic(12);
     const isCurrentlyChecked = Boolean(checkedGroceryKeys[item.key]);
     onToggleGroceryKey(item.key);
 
@@ -274,6 +285,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
   };
 
   const handleCheckExtraItem = (ex: GroceryExtra) => {
+    triggerHaptic(12);
     const isCurrentlyChecked = ex.checked;
     onToggleExtra(ex.id);
 
