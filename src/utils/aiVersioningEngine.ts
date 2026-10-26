@@ -3,7 +3,7 @@ import {
   RecipeIngredient,
   RecipeInstruction,
 } from '../types/freshdiy';
-import { formatAmount } from './dairyEngine';
+import { formatAmount, normalizeUnitAndAmount } from './dairyEngine';
 
 export interface ForkedRecipeResult {
   newRecipe: Recipe;
@@ -60,10 +60,18 @@ export function forkRecipeFromFeedback(
           /spice|seasoning|chili|paste/i.test(ing.name))
       ) {
         const oldAmt = ing.amount;
-        ing.amount = Math.round(oldAmt * multiplier * 100) / 100;
+        const oldUnit = ing.unit;
+        const norm = normalizeUnitAndAmount(
+          Math.round(oldAmt * multiplier * 100) / 100,
+          ing.unit,
+          ing.name
+        );
+        ing.amount = norm.amount;
+        ing.unit = norm.unit;
+        ing.name = norm.name;
         matchedAny = true;
         changes.push(
-          `Adjusted ${ing.name}: ${formatAmount(oldAmt)} ${ing.unit} ➔ ${formatAmount(ing.amount)} ${ing.unit} (${isIncreasePct ? '+' : '-'}${pct}%)`
+          `Adjusted ${ing.name}: ${formatAmount(oldAmt)} ${oldUnit} ➔ ${formatAmount(ing.amount)} ${ing.unit} (${isIncreasePct ? '+' : '-'}${pct}%)`
         );
 
         // Update matching quantities inside instruction text
@@ -86,9 +94,17 @@ export function forkRecipeFromFeedback(
       clonedIngredients.forEach((ing) => {
         if (/chili|spice|seasoning|paste|glaze/i.test(ing.name)) {
           const oldAmt = ing.amount;
-          ing.amount = Math.round(oldAmt * multiplier * 100) / 100;
+          const oldUnit = ing.unit;
+          const norm = normalizeUnitAndAmount(
+            Math.round(oldAmt * multiplier * 100) / 100,
+            ing.unit,
+            ing.name
+          );
+          ing.amount = norm.amount;
+          ing.unit = norm.unit;
+          ing.name = norm.name;
           changes.push(
-            `Adjusted ${ing.name} (for "${targetTerm}"): ${formatAmount(oldAmt)} ${ing.unit} ➔ ${formatAmount(ing.amount)} ${ing.unit}`
+            `Adjusted ${ing.name} (for "${targetTerm}"): ${formatAmount(oldAmt)} ${oldUnit} ➔ ${formatAmount(ing.amount)} ${ing.unit}`
           );
         }
       });
@@ -103,9 +119,17 @@ export function forkRecipeFromFeedback(
     clonedIngredients.forEach((ing) => {
       if (/chili|spice|blackening|southwest|fajita|shawarma|tex-mex/i.test(ing.name)) {
         const oldAmt = ing.amount;
-        ing.amount = Math.round(oldAmt * 0.5 * 100) / 100;
+        const oldUnit = ing.unit;
+        const norm = normalizeUnitAndAmount(
+          Math.round(oldAmt * 0.5 * 100) / 100,
+          ing.unit,
+          ing.name
+        );
+        ing.amount = norm.amount;
+        ing.unit = norm.unit;
+        ing.name = norm.name;
         changes.push(
-          `Kid-Friendly Mild Adjustment — reduced ${ing.name} by 50%: ${formatAmount(oldAmt)} ${ing.unit} ➔ ${formatAmount(ing.amount)} ${ing.unit}`
+          `Kid-Friendly Mild Adjustment — reduced ${ing.name} by 50%: ${formatAmount(oldAmt)} ${oldUnit} ➔ ${formatAmount(ing.amount)} ${ing.unit}`
         );
       }
     });
@@ -129,10 +153,18 @@ export function forkRecipeFromFeedback(
         (target.includes('veggie') && ing.aisle === 'Produce')
       ) {
         const oldAmt = ing.amount;
+        const oldUnit = ing.unit;
         const factor = /double/i.test(notes) ? 2 : 1.5;
-        ing.amount = Math.round(oldAmt * factor * 100) / 100;
+        const norm = normalizeUnitAndAmount(
+          Math.round(oldAmt * factor * 100) / 100,
+          ing.unit,
+          ing.name
+        );
+        ing.amount = norm.amount;
+        ing.unit = norm.unit;
+        ing.name = norm.name;
         changes.push(
-          `Increased ${ing.name}: ${formatAmount(oldAmt)} ${ing.unit} ➔ ${formatAmount(ing.amount)} ${ing.unit}`
+          `Increased ${ing.name}: ${formatAmount(oldAmt)} ${oldUnit} ➔ ${formatAmount(ing.amount)} ${ing.unit}`
         );
       }
     });

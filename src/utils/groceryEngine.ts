@@ -13,7 +13,11 @@ import {
   findBlendDefinition,
   HELLOFRESH_PROPRIETARY_BLENDS,
 } from './blendDecoder';
-import { formatAmount, transformIngredient } from './dairyEngine';
+import {
+  formatAmount,
+  formatIngredientDisplay,
+  transformIngredient,
+} from './dairyEngine';
 import { getItemStoreLocation, StoreLayout } from './storeLayouts';
 
 export interface ItemQuantityBreakdown {
@@ -306,12 +310,7 @@ export function formatGroceryListForValleria(
           : '';
       const lowNote = item.cabinetStatus === 'low' ? ' (Running low in cabinet)' : '';
       const aisleTag = loc.aisleNumber ? `[Aisle ${loc.aisleNumber}] ` : '';
-      const qtyLabel =
-        item.unit === 'to taste' || item.unit === 'as needed'
-          ? `${item.name} (${item.unit})`
-          : [formatAmount(item.totalAmount), item.unit, item.name]
-              .filter(Boolean)
-              .join(' ');
+      const qtyLabel = formatIngredientDisplay(item.totalAmount, item.unit, item.name);
       bucket.lines.push(
         `• ${aisleTag}${qtyLabel}${dairyTag}${blendMissingNote}${lowNote}`
       );
@@ -367,8 +366,9 @@ export function formatGroceryListForValleria(
         ? ` [Need base spices: ${item.blendBreakdown.missingSpices.join(', ')}]`
         : '';
     const lowNote = item.cabinetStatus === 'low' ? ' (Running low in cabinet)' : '';
+    const displayLabel = formatIngredientDisplay(item.totalAmount, item.unit, item.name);
     list.push(
-      `• ${formatAmount(item.totalAmount)} ${item.unit} ${item.name}${dairyTag}${blendMissingNote}${lowNote}`
+      `• ${displayLabel}${dairyTag}${blendMissingNote}${lowNote}`
     );
     byAisle.set(item.aisle, list);
   }

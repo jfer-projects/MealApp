@@ -34,7 +34,7 @@ import {
   WeeklyPlanItem,
 } from '../types/freshdiy';
 import { findBlendDefinition } from '../utils/blendDecoder';
-import { formatAmount } from '../utils/dairyEngine';
+import { formatAmount, formatIngredientDisplay } from '../utils/dairyEngine';
 import { formatWeekRange } from '../utils/dateUtils';
 import {
   AggregatedGroceryItem,
@@ -686,11 +686,7 @@ export const GroceryView: React.FC<GroceryViewProps> = ({
                   isCrossed ? 'line-through text-slate-400' : 'text-slate-900'
                 }`}
               >
-                {item.unit === 'to taste' || item.unit === 'as needed'
-                  ? `${item.name} (${item.unit})`
-                  : [formatAmount(item.totalAmount), item.unit, item.name]
-                      .filter(Boolean)
-                      .join(' ')}
+                {formatIngredientDisplay(item.totalAmount, item.unit, item.name)}
               </span>
 
               {/* Stop & Shop Exact Location Badge */}

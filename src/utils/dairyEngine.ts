@@ -139,12 +139,16 @@ export function formatAmount(val: number): string {
   if (Number.isInteger(rounded)) return String(rounded);
   const whole = Math.floor(rounded);
   const frac = rounded - whole;
-  const prefix = whole > 0 ? `${whole} ` : '';
-  if (Math.abs(frac - 0.25) < 0.04) return `${prefix}¼`;
-  if (Math.abs(frac - 0.33) < 0.05) return `${prefix}⅓`;
-  if (Math.abs(frac - 0.5) < 0.04) return `${prefix}½`;
-  if (Math.abs(frac - 0.66) < 0.05) return `${prefix}⅔`;
-  if (Math.abs(frac - 0.75) < 0.04) return `${prefix}¾`;
+  const prefix = whole > 0 ? String(whole) : '';
+  if (Math.abs(frac - 0.125) < 0.03) return prefix ? `${prefix}⅛` : '⅛';
+  if (Math.abs(frac - 0.25) < 0.04) return prefix ? `${prefix}¼` : '¼';
+  if (Math.abs(frac - 0.33) < 0.05) return prefix ? `${prefix}⅓` : '⅓';
+  if (Math.abs(frac - 0.375) < 0.03) return prefix ? `${prefix}⅜` : '⅜';
+  if (Math.abs(frac - 0.5) < 0.04) return prefix ? `${prefix}½` : '½';
+  if (Math.abs(frac - 0.625) < 0.03) return prefix ? `${prefix}⅝` : '⅝';
+  if (Math.abs(frac - 0.66) < 0.05) return prefix ? `${prefix}⅔` : '⅔';
+  if (Math.abs(frac - 0.75) < 0.04) return prefix ? `${prefix}¾` : '¾';
+  if (Math.abs(frac - 0.875) < 0.03) return prefix ? `${prefix}⅞` : '⅞';
   return String(Math.round(val * 10) / 10);
 }
 
@@ -153,38 +157,194 @@ function pluralizeCountableIngredientName(name: string, amount: number): string 
   return name
     .replace(/\b(Potato)$/i, '$1es')
     .replace(/\b(Tomato)$/i, '$1es')
-    .replace(/\b(Carrot|Onion|Scallion|Shallot|Lemon|Lime|Apple|Cucumber|Zucchini|Egg|Avocado|Mushroom|Pepper|Jalape[ñn]o|Tortilla|Bun|Flatbread|Baguette|Roll|Clove|Brioche Bun|Potato Bun)$/i, (m) =>
-      /s$/i.test(m) ? m : `${m}s`
+    .replace(/\b(Radish)$/i, '$1es')
+    .replace(
+      /\b(Carrot|Onion|Scallion|Shallot|Lemon|Lime|Apple|Cucumber|Zucchini|Egg|Avocado|Mushroom|Pepper|Jalape[ñn]o|Tortilla|Bun|Flatbread|Baguette|Roll|Clove|Brioche Bun|Potato Bun|Pita)$/i,
+      (m) => (/s$/i.test(m) ? m : `${m}s`)
     );
 }
 
-function normalizeUnitAndAmount(
+export function formatIngredientMeasurement(amount: number, unit: string): string {
+  const u = (unit || '').trim();
+  if (u === 'to taste' || u === 'as needed') {
+    return u;
+  }
+  const amtStr = formatAmount(amount);
+  if (!u) return amtStr;
+  return [amtStr, u].filter(Boolean).join(' ');
+}
+
+export function formatIngredientDisplay(amount: number, unit: string, name: string): string {
+  const u = (unit || '').trim();
+  if (u === 'to taste' || u === 'as needed') {
+    return `${name} (${u})`;
+  }
+  const amtStr = formatAmount(amount);
+  if (!u) {
+    return [amtStr, name].filter(Boolean).join(' ');
+  }
+  return [amtStr, u, name].filter(Boolean).join(' ');
+}
+
+export function normalizeUnitAndAmount(
   amount: number,
   rawUnit: string,
   name: string
 ): { amount: number; unit: string; name: string } {
-  const cleanName = (name || '').trim();
-  const u = (rawUnit || '').trim();
-  const isGenericUnit = /^units?$/i.test(u) || /^items?$/i.test(u);
+  let cleanName = (name || '').trim();
+  let u = (rawUnit || '').trim().toLowerCase();
+  let amt = amount;
 
+  // Salt & Pepper
   if (/^(?:kosher\s+|sea\s+|flaky\s+)?salt$|^(?:black\s+|white\s+)?pepper$|^salt\s*(?:&|and)\s*pepper$/i.test(cleanName)) {
     return { amount: 0, unit: 'to taste', name: cleanName };
   }
 
-  if (
-    isGenericUnit &&
-    /\b(?:cooking|olive|vegetable|canola|sesame|avocado|peanut)\s+oil\b|^oil$/i.test(cleanName)
-  ) {
+  // Cooking Oil
+  if ((u === 'unit' || u === '') && /\b(?:cooking|olive|vegetable|canola|sesame|avocado|peanut)\s+oil\b|^oil$/i.test(cleanName)) {
     return { amount: 0, unit: 'as needed', name: cleanName };
   }
 
-  const finalUnit = isGenericUnit ? '' : u;
-  const finalName = finalUnit === '' ? pluralizeCountableIngredientName(cleanName, amount) : cleanName;
+  // Ginger 'thumb' -> tablespoon / tsp
+  if (u === 'thumb' || (/\bginger\b/i.test(cleanName) && (u === 'unit' || u === ''))) {
+    if (amt <= 0.5) return { amount: 1.5, unit: 'tsp minced', name: cleanName };
+    if (amt <= 1) return { amount: 1, unit: 'tbsp minced (1" piece)', name: cleanName };
+    return { amount: Math.round(amt), unit: `tbsp minced (${Math.round(amt)}" piece)`, name: cleanName };
+  }
+
+  // Milliliters -> tsp / tbsp / cups
+  if (u === 'milliliters' || u === 'ml') {
+    if (amt <= 6) return { amount: 1, unit: 'tsp', name: cleanName };
+    if (amt <= 11) return { amount: 2, unit: 'tsp', name: cleanName };
+    if (amt <= 13) return { amount: 2.5, unit: 'tsp (approx. ½ tbsp)', name: cleanName };
+    if (amt <= 16) return { amount: 1, unit: 'tbsp', name: cleanName };
+    if (amt <= 25) return { amount: 1.5, unit: 'tbsp', name: cleanName };
+    if (amt <= 32) return { amount: 2, unit: 'tbsp', name: cleanName };
+    if (amt <= 65) return { amount: 0.25, unit: 'cup', name: cleanName };
+    if (amt <= 130) return { amount: 0.5, unit: 'cup', name: cleanName };
+    return { amount: Math.round((amt / 240) * 4) / 4, unit: 'cup', name: cleanName };
+  }
+
+  // Grams -> tsp / tbsp / cups
+  if (u === 'g' || u === 'grams') {
+    if (/tempura|batter|flour|panko|mix/i.test(cleanName)) {
+      if (amt >= 140 && amt <= 180) return { amount: 1.25, unit: 'cup', name: cleanName };
+      return { amount: Math.round((amt / 125) * 4) / 4, unit: 'cup', name: cleanName };
+    }
+    // Spices & seasonings
+    if (amt <= 5) return { amount: 1, unit: 'tsp', name: cleanName };
+    if (amt <= 8) return { amount: 1.5, unit: 'tsp', name: cleanName };
+    if (amt <= 16) return { amount: 1, unit: 'tbsp', name: cleanName };
+    if (amt <= 23) return { amount: 1.5, unit: 'tbsp', name: cleanName };
+    return { amount: Math.round((amt / 14.4) * 2) / 2, unit: 'tbsp', name: cleanName };
+  }
+
+  // Tomato Paste in ounces or units
+  if (/tomato paste/i.test(cleanName)) {
+    if (u === 'ounce' || u === 'oz') {
+      return { amount: amt * 2, unit: 'tbsp', name: cleanName };
+    }
+    if (u === 'unit' || u === '') {
+      return { amount: amt, unit: amt === 1 ? 'pouch (2 tbsp)' : 'pouches (2 tbsp each)', name: cleanName };
+    }
+  }
+
+  // Fresh Herbs in ounces
+  if ((u === 'ounce' || u === 'oz') && /\b(?:rosemary|thyme|sage|oregano)\b/i.test(cleanName)) {
+    if (amt <= 0.25) return { amount: 1, unit: 'tbsp chopped (2–3 sprigs)', name: cleanName };
+    return { amount: Math.round(amt * 4), unit: 'tbsp chopped', name: cleanName };
+  }
+  if ((u === 'ounce' || u === 'oz') && /\b(?:cilantro|parsley|dill|chives|basil|mint)\b/i.test(cleanName)) {
+    if (amt <= 0.25) return { amount: 2, unit: 'tbsp chopped', name: cleanName };
+    if (amt <= 0.5) return { amount: 0.25, unit: 'cup chopped', name: cleanName };
+    return { amount: 0.5, unit: 'cup chopped', name: cleanName };
+  }
+
+  // Butter in ounces
+  if ((u === 'ounce' || u === 'oz') && /\bbutter\b/i.test(cleanName) && !/peanut|almond|cashew/i.test(cleanName)) {
+    const tbsp = amt * 2;
+    if (tbsp >= 4 && tbsp % 4 === 0) {
+      return { amount: tbsp / 16, unit: 'cup', name: cleanName };
+    }
+    return { amount: tbsp, unit: 'tbsp', name: cleanName };
+  }
+
+  // Dairy & creamy sauces in ounces (milk, cream sauce base, sour cream, mayo)
+  if (u === 'ounce' || u === 'oz') {
+    if (/milk|cream sauce|creamy/i.test(cleanName)) {
+      if (Math.abs(amt - 6.75) < 0.5) return { amount: 0.75, unit: 'cup', name: cleanName };
+      if (amt >= 2) return { amount: Math.round((amt / 8) * 4) / 4, unit: 'cup', name: cleanName };
+      return { amount: amt * 2, unit: 'tbsp', name: cleanName };
+    }
+    if (/sour cream|greek yogurt|mayo|mayonnaise|cream cheese/i.test(cleanName)) {
+      if (amt >= 4) return { amount: Math.round((amt / 8) * 4) / 4, unit: 'cup', name: cleanName };
+      if (amt === 2) return { amount: 0.25, unit: 'cup (4 tbsp)', name: cleanName };
+      return { amount: amt * 2, unit: 'tbsp', name: cleanName };
+    }
+    if (/sweet thai chili|marinara|soy glaze|bbq|sauce|dressing|honey|syrup|vinegar|ketchup|mustard|paste/i.test(cleanName)) {
+      if (amt === 5) return { amount: 0.66, unit: 'cup', name: cleanName };
+      if (amt >= 4) return { amount: Math.round((amt / 8) * 4) / 4, unit: 'cup', name: cleanName };
+      if (amt === 2) return { amount: 0.25, unit: 'cup (4 tbsp)', name: cleanName };
+      return { amount: amt * 2, unit: 'tbsp', name: cleanName };
+    }
+    if (/cheese|parmesan|cheddar|mozzarella/i.test(cleanName)) {
+      return { amount: Math.round((amt / 4) * 4) / 4, unit: 'cup shredded', name: cleanName };
+    }
+  }
+
+  // Stock concentrates
+  if (/stock concentrate|broth concentrate/i.test(cleanName) && (u === 'unit' || u === '')) {
+    return { amount: amt, unit: amt === 1 ? 'packet' : 'packets', name: cleanName };
+  }
+
+  // Clean raw unit labels
+  u = u.replace(/\s*\(tsp\)/gi, '').replace(/\s*\(tbsp\)/gi, '').trim();
+  if (u === 'teaspoon') u = 'tsp';
+  if (u === 'tablespoon') u = 'tbsp';
+
+  // Upgrade teaspoons to tablespoons
+  if (u === 'tsp') {
+    if (amt >= 3 && amt % 3 === 0) {
+      amt = amt / 3;
+      u = 'tbsp';
+    } else if (amt === 4.5) {
+      amt = 1.5;
+      u = 'tbsp';
+    }
+  }
+
+  // Upgrade tablespoons to cups
+  if (u === 'tbsp') {
+    if (amt === 4) { amt = 0.25; u = 'cup'; }
+    else if (amt === 8) { amt = 0.5; u = 'cup'; }
+    else if (amt === 12) { amt = 0.75; u = 'cup'; }
+    else if (amt === 16) { amt = 1; u = 'cup'; }
+  }
+
+  // Unit = unit normalization
+  if (u === 'unit' || u === 'units' || u === 'item' || u === 'items' || u === '') {
+    if (/scallions?|green onions?/i.test(cleanName)) {
+      return { amount: amt, unit: amt === 1 ? 'bunch' : 'bunches', name: cleanName };
+    }
+    if (/black beans|chickpeas|crushed tomatoes|diced tomatoes|coconut milk/i.test(cleanName)) {
+      return { amount: amt, unit: amt === 1 ? 'can' : 'cans', name: cleanName };
+    }
+    if (/tortillas?/i.test(cleanName)) {
+      return { amount: amt, unit: '', name: pluralizeCountableIngredientName(cleanName, amt) };
+    }
+    if (/buns?/i.test(cleanName)) {
+      return { amount: amt, unit: '', name: pluralizeCountableIngredientName(cleanName, amt) };
+    }
+    if (/pitas?/i.test(cleanName)) {
+      return { amount: amt, unit: '', name: pluralizeCountableIngredientName(cleanName, amt) };
+    }
+    return { amount: amt, unit: '', name: pluralizeCountableIngredientName(cleanName, amt) };
+  }
 
   return {
-    amount,
-    unit: finalUnit,
-    name: finalName,
+    amount: amt,
+    unit: u,
+    name: cleanName,
   };
 }
 
@@ -269,11 +429,105 @@ export function transformIngredient(
   };
 }
 
+const UNICODE_FRACTION_MAP: Record<string, number> = {
+  '¼': 0.25,
+  '½': 0.5,
+  '¾': 0.75,
+  '⅓': 0.333,
+  '⅔': 0.667,
+  '⅛': 0.125,
+  '⅜': 0.375,
+  '⅝': 0.625,
+  '⅞': 0.875,
+};
+
+function parseQuantityValue(str: string): number {
+  const trimmed = (str || '').trim();
+  if (!trimmed) return 0;
+
+  // Check for mixed unicode: "1½" or "1 ½"
+  const mixedUnicode = /^(\d+)\s*([¼½¾⅓⅔⅛⅜⅝⅞])$/.exec(trimmed);
+  if (mixedUnicode) {
+    const whole = parseInt(mixedUnicode[1], 10);
+    const frac = UNICODE_FRACTION_MAP[mixedUnicode[2]] || 0;
+    return whole + frac;
+  }
+
+  // Pure unicode fraction: "¼"
+  if (UNICODE_FRACTION_MAP[trimmed]) {
+    return UNICODE_FRACTION_MAP[trimmed];
+  }
+
+  // Ascii slash fraction: "1/2" or "1 1/2"
+  const mixedAscii = /^(\d+)\s+(\d+)\/(\d+)$/.exec(trimmed);
+  if (mixedAscii) {
+    return parseInt(mixedAscii[1], 10) + parseInt(mixedAscii[2], 10) / parseInt(mixedAscii[3], 10);
+  }
+  const pureSlash = /^(\d+)\/(\d+)$/.exec(trimmed);
+  if (pureSlash) {
+    return parseInt(pureSlash[1], 10) / parseInt(pureSlash[2], 10);
+  }
+
+  const num = parseFloat(trimmed);
+  return Number.isNaN(num) ? 0 : num;
+}
+
+/**
+ * Resolves dual parenthetical measurements in HelloFresh instructions, such as:
+ * "1 TBSP butter (2 TBSP for 4 servings)" -> "2 tbsp butter" (for 4 servings) or "1 tbsp butter" (for 2 servings)
+ * "¼ cup water (⅓ cup for 4 servings)" -> "⅓ cup water" (for 4 servings)
+ */
+function resolveDualServingParentheticals(text: string, targetServings: ServingsSize): string {
+  // Pattern matching: [amount unit [noun]] ([amount unit [noun]] for 4 [servings])
+  const pattern = /((?:half\s+(?:the\s+)?[\w\s]+?|[¼½¾⅓⅔⅛⅜⅝⅞\d\/\.]+\s*(?:tbsp|tsp|cups?|oz|tablespoons?|teaspoons?|buns?|pieces?|tortillas?)?(?:\s+[\w\s]+?)?))\s*\(\s*(?:use\s+)?((?:all\s+(?:the\s+)?[\w\s]+?|[¼½¾⅓⅔⅛⅜⅝⅞\d\/\.]+\s*(?:tbsp|tsp|cups?|oz|tablespoons?|teaspoons?|buns?|pieces?|tortillas?)?(?:\s+[\w\s]+?)?))\s+for\s+4(?:\s+servings)?\s*\)/gi;
+
+  let out = text.replace(pattern, (_match, for2Raw, for4Raw) => {
+    let for2 = (for2Raw || '').trim();
+    let for4 = (for4Raw || '').trim();
+
+    const unitOrNumRegex = /^(?:[¼½¾⅓⅔⅛⅜⅝⅞\d\/\.]+\s*(?:tbsp|tsp|cups?|oz|tablespoons?|teaspoons?|buns?|pieces?|tortillas?)?|half|all)\s*/i;
+    const noun2 = for2.replace(unitOrNumRegex, '').trim();
+    const noun4 = for4.replace(unitOrNumRegex, '').trim();
+
+    if (noun2 && !noun4) {
+      for4 = `${for4} ${noun2}`;
+    }
+
+    if (targetServings === 4) return for4;
+    if (targetServings === 2) return for2;
+    if (targetServings === 6) {
+      // Scale 4-serving measurement by 1.5 for 6 servings
+      const matchFor4 = /^([¼½¾⅓⅔⅛⅜⅝⅞\d\/\.]+)\s*(\w+)?(?:\s+(.*))?$/i.exec(for4);
+      if (matchFor4) {
+        const val = parseQuantityValue(matchFor4[1]);
+        if (val > 0) {
+          const scaledVal = val * 1.5;
+          const unitPart = matchFor4[2] ? ` ${matchFor4[2]}` : '';
+          const restPart = matchFor4[3] ? ` ${matchFor4[3]}` : '';
+          return `${formatAmount(scaledVal)}${unitPart}${restPart}`;
+        }
+      }
+      return for4;
+    }
+    return _match;
+  });
+
+  // Clean standalone notes
+  if (targetServings === 2) {
+    out = out.replace(/\(For 4 servings, [^)]*\)/gi, '');
+  }
+
+  return out;
+}
+
 /**
  * Transforms an instruction string by:
- * 1. Scaling embedded numeric measurement quantities (oz, tbsp, tsp, cup, cups, g, cloves, buns, tortillas)
- *    according to targetServings / baseServings.
- * 2. Applying the Dynamic Dairy Substitution Matrix when isDairyFree is true.
+ * 1. Resolving dual HelloFresh serving notes (e.g. "1 TBSP butter (2 TBSP for 4 servings)")
+ *    cleanly for the selected family serving size.
+ * 2. Scaling embedded numeric and unicode fractional measurement quantities
+ *    (tbsp, tsp, cup, cups, oz, etc.) according to targetServings / baseServings.
+ * 3. Standardizing all measurements into clear, friendly culinary units (tbsp, tsp, cups).
+ * 4. Applying the Dynamic Dairy Substitution Matrix when isDairyFree is true.
  */
 export function transformInstructionText(
   text: string,
@@ -282,26 +536,41 @@ export function transformInstructionText(
   isDairyFree: boolean
 ): string {
   if (!text) return text;
+
+  // 1. First resolve dual serving parentheticals
+  let result = resolveDualServingParentheticals(text, targetServings);
+
+  // 2. Standardize all unit casing and abbreviations
+  result = result
+    .replace(/\bTBSP\b/g, 'tbsp')
+    .replace(/\bTSP\b/g, 'tsp')
+    .replace(/\bCUPS?\b/g, (m) => m.toLowerCase())
+    .replace(/\btablespoons?\b/gi, 'tbsp')
+    .replace(/\bteaspoons?\b/gi, 'tsp');
+
+  // 3. Scale quantities when targetServings differs from baseServings (e.g. 6 servings or 2 vs 4)
   const ratio = targetServings / (baseServings || 4);
-
-  // Scale inline quantities followed by culinary units, and strip raw "unit/units"
-  let result = text
-    .replace(
-      /\b(\d+(?:\.\d+)?)\s*(oz|tbsp|tsp|cups?|g|grams?|buns?|pieces?|flatbreads?)\b/gi,
-      (_match, numStr, unit) => {
-        const val = parseFloat(numStr);
-        if (Number.isNaN(val)) return _match;
+  if (Math.abs(ratio - 1) > 0.05) {
+    result = result.replace(
+      /\b([¼½¾⅓⅔⅛⅜⅝⅞\d\/\.]+)\s*(oz|tbsp|tsp|cups?|buns?|pieces?|flatbreads?|tortillas?|packets?|cloves?)\b/gi,
+      (match, numStr, unit) => {
+        const val = parseQuantityValue(numStr);
+        if (val <= 0) return match;
         const scaled = val * ratio;
-        return `${formatAmount(scaled)} ${unit}`;
+        return `${formatAmount(scaled)} ${unit.toLowerCase()}`;
       }
-    )
-    .replace(/\b(\d+(?:\.\d+)?)\s+units?\b/gi, '$1');
+    );
+  }
 
+  // 4. Strip leftover raw "unit/units"
+  result = result.replace(/\b(\d+(?:\.\d+)?)\s+units?\b/gi, '$1');
+
+  // 5. Apply dairy substitutions if active
   if (isDairyFree) {
     result = applyDairySubstitutionsToText(result).text;
   }
 
-  return result;
+  return result.replace(/\s{2,}/g, ' ').trim();
 }
 
 /**

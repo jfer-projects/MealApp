@@ -32,6 +32,7 @@ import {
 } from '../utils/blendDecoder';
 import {
   formatAmount,
+  formatIngredientMeasurement,
   transformIngredient,
   transformInstructions,
 } from '../utils/dairyEngine';
@@ -550,7 +551,7 @@ export const CookingView: React.FC<CookingViewProps> = ({
                     )}
                   </div>
                   <span className="font-extrabold text-slate-900 ml-2 shrink-0">
-                    {[formatAmount(ing.amount), ing.unit].filter(Boolean).join(' ')}
+                    {formatIngredientMeasurement(ing.amount, ing.unit)}
                   </span>
                 </li>
               );

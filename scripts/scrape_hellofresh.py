@@ -442,6 +442,124 @@ def normalize_title(title: str) -> str:
     return clean
 
 
+def normalize_ingredient_measurement(amount: float, raw_unit: str, name: str) -> tuple[float, str, str]:
+    clean_name = (name or "").strip()
+    u = (raw_unit or "").strip().lower()
+    amt = amount
+
+    # Salt & Pepper
+    if re.search(r"^(?:kosher\s+|sea\s+|flaky\s+)?salt$|^(?:black\s+|white\s+)?pepper$|^salt\s*(?:&|and)\s*pepper$", clean_name, re.I):
+        return 0.0, "to taste", clean_name
+
+    # Cooking Oil
+    if (u in ["unit", "item", ""]) and re.search(r"\b(?:cooking|olive|vegetable|canola|sesame|avocado|peanut)\s+oil\b|^oil$", clean_name, re.I):
+        return 0.0, "as needed", clean_name
+
+    # Ginger 'thumb' -> tablespoon / tsp
+    if u == "thumb" or (re.search(r"\bginger\b", clean_name, re.I) and u in ["unit", ""]):
+        if amt <= 0.5:
+            return 1.5, "tsp minced", clean_name
+        if amt <= 1:
+            return 1.0, 'tbsp minced (1" piece)', clean_name
+        return round(amt), f'tbsp minced ({round(amt)}" piece)', clean_name
+
+    # Milliliters
+    if u in ["milliliters", "ml"]:
+        if amt <= 6: return 1.0, "tsp", clean_name
+        if amt <= 11: return 2.0, "tsp", clean_name
+        if amt <= 13: return 2.5, "tsp (approx. ½ tbsp)", clean_name
+        if amt <= 16: return 1.0, "tbsp", clean_name
+        if amt <= 25: return 1.5, "tbsp", clean_name
+        if amt <= 32: return 2.0, "tbsp", clean_name
+        if amt <= 65: return 0.25, "cup", clean_name
+        if amt <= 130: return 0.5, "cup", clean_name
+        return round((amt / 240.0) * 4) / 4.0, "cup", clean_name
+
+    # Grams
+    if u in ["g", "grams"]:
+        if re.search(r"tempura|batter|flour|panko|mix", clean_name, re.I):
+            if 140 <= amt <= 180: return 1.25, "cup", clean_name
+            return round((amt / 125.0) * 4) / 4.0, "cup", clean_name
+        if amt <= 5: return 1.0, "tsp", clean_name
+        if amt <= 8: return 1.5, "tsp", clean_name
+        if amt <= 16: return 1.0, "tbsp", clean_name
+        if amt <= 23: return 1.5, "tbsp", clean_name
+        return round((amt / 14.4) * 2) / 2.0, "tbsp", clean_name
+
+    # Tomato Paste
+    if re.search(r"tomato paste", clean_name, re.I):
+        if u in ["ounce", "oz"]:
+            return amt * 2.0, "tbsp", clean_name
+        if u in ["unit", ""]:
+            return amt, ("pouch (2 tbsp)" if amt == 1 else "pouches (2 tbsp each)"), clean_name
+
+    # Fresh herbs in ounces
+    if u in ["ounce", "oz"] and re.search(r"\b(?:rosemary|thyme|sage|oregano)\b", clean_name, re.I):
+        if amt <= 0.25: return 1.0, "tbsp chopped (2–3 sprigs)", clean_name
+        return round(amt * 4), "tbsp chopped", clean_name
+    if u in ["ounce", "oz"] and re.search(r"\b(?:cilantro|parsley|dill|chives|basil|mint)\b", clean_name, re.I):
+        if amt <= 0.25: return 2.0, "tbsp chopped", clean_name
+        if amt <= 0.5: return 0.25, "cup chopped", clean_name
+        return 0.5, "cup chopped", clean_name
+
+    # Butter in ounces
+    if u in ["ounce", "oz"] and re.search(r"\bbutter\b", clean_name, re.I) and not re.search(r"peanut|almond|cashew", clean_name, re.I):
+        tbsp = amt * 2.0
+        if tbsp >= 4 and tbsp % 4 == 0:
+            return tbsp / 16.0, "cup", clean_name
+        return tbsp, "tbsp", clean_name
+
+    # Dairy & sauces in ounces
+    if u in ["ounce", "oz"]:
+        if re.search(r"milk|cream sauce|creamy", clean_name, re.I):
+            if abs(amt - 6.75) < 0.5: return 0.75, "cup", clean_name
+            if amt >= 2: return round((amt / 8.0) * 4) / 4.0, "cup", clean_name
+            return amt * 2.0, "tbsp", clean_name
+        if re.search(r"sour cream|greek yogurt|mayo|mayonnaise|cream cheese", clean_name, re.I):
+            if amt >= 4: return round((amt / 8.0) * 4) / 4.0, "cup", clean_name
+            if amt == 2: return 0.25, "cup (4 tbsp)", clean_name
+            return amt * 2.0, "tbsp", clean_name
+        if re.search(r"sweet thai chili|marinara|soy glaze|bbq|sauce|dressing|honey|syrup|vinegar|ketchup|mustard|paste", clean_name, re.I):
+            if amt == 5: return 0.66, "cup", clean_name
+            if amt >= 4: return round((amt / 8.0) * 4) / 4.0, "cup", clean_name
+            if amt == 2: return 0.25, "cup (4 tbsp)", clean_name
+            return amt * 2.0, "tbsp", clean_name
+        if re.search(r"cheese|parmesan|cheddar|mozzarella", clean_name, re.I):
+            return round((amt / 4.0) * 4) / 4.0, "cup shredded", clean_name
+
+    # Stock concentrates
+    if re.search(r"stock concentrate|broth concentrate", clean_name, re.I) and u in ["unit", ""]:
+        return amt, ("packet" if amt == 1 else "packets"), clean_name
+
+    u = re.sub(r"\s*\(tsp\)", "", u, flags=re.I)
+    u = re.sub(r"\s*\(tbsp\)", "", u, flags=re.I).strip()
+    if u == "teaspoon": u = "tsp"
+    if u == "tablespoon": u = "tbsp"
+
+    if u == "tsp":
+        if amt >= 3 and amt % 3 == 0:
+            amt = amt / 3.0
+            u = "tbsp"
+        elif amt == 4.5:
+            amt = 1.5
+            u = "tbsp"
+
+    if u == "tbsp":
+        if amt == 4: amt, u = 0.25, "cup"
+        elif amt == 8: amt, u = 0.5, "cup"
+        elif amt == 12: amt, u = 0.75, "cup"
+        elif amt == 16: amt, u = 1.0, "cup"
+
+    if u in ["unit", "units", "item", "items", ""]:
+        if re.search(r"scallions?|green onions?", clean_name, re.I):
+            return amt, ("bunch" if amt == 1 else "bunches"), clean_name
+        if re.search(r"black beans|chickpeas|crushed tomatoes|diced tomatoes|coconut milk", clean_name, re.I):
+            return amt, ("can" if amt == 1 else "cans"), clean_name
+        return amt, "", clean_name
+
+    return amt, u, clean_name
+
+
 def convert_hf_item_to_freshdiy(item: Dict[str, Any], collection_tag: Optional[str] = None) -> Optional[Dict[str, Any]]:
     steps = item.get("steps") or []
     ingredients_meta = item.get("ingredients") or []
@@ -475,12 +593,13 @@ def convert_hf_item_to_freshdiy(item: Dict[str, Any], collection_tag: Optional[s
         if raw_amount is None:
             raw_amount = 1.0
         scaled_amount = round(float(raw_amount) * scale_mult, 2)
-        blend = detect_blend(name)
-        aisle = infer_aisle(name)
+        norm_amt, norm_unit, norm_name = normalize_ingredient_measurement(scaled_amount, raw_unit, name)
+        blend = detect_blend(norm_name)
+        aisle = infer_aisle(norm_name)
         ing_list.append({
-            "name": name,
-            "amount": scaled_amount,
-            "unit": raw_unit,
+            "name": norm_name,
+            "amount": norm_amt,
+            "unit": norm_unit,
             "aisle": aisle,
             "is_pantry_staple": blend is not None or aisle == "Spices & Pantry",
             "blend_name": blend,
