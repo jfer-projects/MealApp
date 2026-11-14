@@ -1547,8 +1547,8 @@ export const App: React.FC = () => {
               <ChefHat className="w-4 h-4 sm:w-6 sm:h-6" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-base sm:text-xl font-black tracking-tight text-slate-900">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-base sm:text-xl font-black tracking-tight text-slate-900 truncate">
                   Fresh<span className="text-emerald-600">DIY</span>
                 </span>
                 <button
@@ -1644,7 +1644,7 @@ export const App: React.FC = () => {
               }`}
               title="Toggle automatic dairy-free ingredient and recipe substitutions"
             >
-              <Leaf className="w-3.5 h-3.5 shrink-0" />
+              <Leaf className="hidden sm:block w-3.5 h-3.5 shrink-0" />
               <span>Dairy-free</span>
               <span
                 className={`w-6 h-3.5 rounded-full p-0.5 flex items-center transition-colors ${
@@ -1663,7 +1663,6 @@ export const App: React.FC = () => {
             >
               <Target className="w-3.5 h-3.5 text-white shrink-0" />
               <span className="hidden sm:inline">Macro AI</span>
-              <span className="sm:hidden">Macro</span>
             </button>
 
             <button

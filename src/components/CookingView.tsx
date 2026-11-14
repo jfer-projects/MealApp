@@ -34,6 +34,7 @@ import {
   formatAmount,
   formatIngredientMeasurement,
   transformIngredient,
+  transformInstructionText,
   transformInstructions,
 } from '../utils/dairyEngine';
 
@@ -424,7 +425,9 @@ export const CookingView: React.FC<CookingViewProps> = ({
             <h1 className="text-2xl font-extrabold text-slate-900">
               {recipe.title}
             </h1>
-            <p className="text-sm text-slate-500 mt-1">{recipe.subtitle}</p>
+            <p className="text-sm text-slate-500 mt-1">
+              {transformInstructionText(recipe.subtitle, servings, servings, isDairyFree)}
+            </p>
 
             {recipe.version_notes && (
               <div className="mt-3 p-3 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-900">
