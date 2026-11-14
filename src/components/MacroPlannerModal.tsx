@@ -126,7 +126,7 @@ const PRESET_GOALS: {
     },
   },
   {
-    id: 'lean_bulk',
+    id: 'athlete',
     label: 'Athlete / Mass Monster',
     desc: 'Heavy training & bulking with 4,500+ kcal & high protein',
     icon: '⚡',
@@ -135,7 +135,7 @@ const PRESET_GOALS: {
       proteinGrams: 280,
       carbsGrams: 550,
       fatGrams: 130,
-      dietStyle: 'lean_bulk',
+      dietStyle: 'athlete',
     },
   },
 ];
@@ -155,7 +155,13 @@ export const MacroPlannerModal: React.FC<MacroPlannerModalProps> = ({
   onOpenFamilySettings,
 }) => {
   const [goals, setGoals] = useState<MacroGoals>(() => {
-    if (initialMacroGoals) return initialMacroGoals;
+    if (initialMacroGoals) {
+      // Goals saved before the Athlete preset had its own id were stored as lean_bulk
+      if (initialMacroGoals.dietStyle === 'lean_bulk' && initialMacroGoals.calories >= 2000) {
+        return { ...initialMacroGoals, dietStyle: 'athlete' };
+      }
+      return initialMacroGoals;
+    }
     return PRESET_GOALS[0].goals;
   });
 

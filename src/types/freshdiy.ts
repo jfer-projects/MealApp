@@ -157,7 +157,7 @@ export interface MacroGoals {
   carbsGrams: number; // e.g. 50
   fatGrams: number; // e.g. 22
   dietType?: 'balanced' | 'high_protein' | 'keto_low_carb' | 'deficit_cut' | 'lean_bulk';
-  dietStyle?: 'high_protein' | 'keto' | 'deficit' | 'lean_bulk' | 'balanced';
+  dietStyle?: 'high_protein' | 'keto' | 'deficit' | 'lean_bulk' | 'athlete' | 'balanced';
   notes?: string;
 }
 
