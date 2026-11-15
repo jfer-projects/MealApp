@@ -3,7 +3,35 @@ import { Recipe } from '../types/freshdiy';
 const DB_NAME = 'freshdiy_catalog_cache_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'catalog_store';
-const CACHE_KEY = 'hellofresh_recipes_v4';
+const CACHE_KEY = 'hellofresh_recipes_v5';
+
+/**
+ * Detects the distinct primary protein or style of a recipe
+ * to visually differentiate recipes that share images or studio photography.
+ */
+export function getRecipeProteinBadge(recipe: Recipe): { label: string; icon: string } | null {
+  const combined = `${recipe.title || ''} ${recipe.subtitle || ''} ${(recipe.ingredients_json || [])
+    .map((i) => i.name)
+    .join(' ')}`.toLowerCase();
+
+  if (combined.includes('organic chicken')) return { label: 'Organic Chicken', icon: '🍗' };
+  if (combined.includes('organic beef') || combined.includes('organic ground beef')) return { label: 'Organic Beef', icon: '🥩' };
+  if (combined.includes('organic turkey')) return { label: 'Organic Turkey', icon: '🦃' };
+  if (combined.includes('shrimp')) return { label: 'Shrimp', icon: '🍤' };
+  if (combined.includes('salmon')) return { label: 'Salmon', icon: '🐟' };
+  if (combined.includes('steelhead trout') || combined.includes('trout')) return { label: 'Trout', icon: '🐟' };
+  if (combined.includes('tilapia') || combined.includes('barramundi') || combined.includes('cod') || combined.includes('haddock')) return { label: 'White Fish', icon: '🐟' };
+  if (combined.includes('tofu')) return { label: 'Tofu', icon: '🌱' };
+  if (combined.includes('chicken sausage')) return { label: 'Chicken Sausage', icon: '🌭' };
+  if (combined.includes('pork sausage') || combined.includes('italian sausage') || combined.includes('chorizo')) return { label: 'Pork Sausage', icon: '🌭' };
+  if (combined.includes('chicken breast') || combined.includes('chicken cutlet') || combined.includes('chicken thigh') || combined.includes('chicken')) return { label: 'Chicken', icon: '🍗' };
+  if (combined.includes('ground beef') || combined.includes('sirloin') || combined.includes('tenderloin') || combined.includes('steak') || combined.includes('beef')) return { label: 'Beef', icon: '🥩' };
+  if (combined.includes('ground turkey') || combined.includes('turkey')) return { label: 'Turkey', icon: '🦃' };
+  if (combined.includes('pork chop') || combined.includes('ground pork') || combined.includes('pork tenderloin') || combined.includes('pork')) return { label: 'Pork', icon: '🥓' };
+  if (combined.includes('chickpea') || combined.includes('black bean') || combined.includes('lentil') || combined.includes('falafel')) return { label: 'Plant-Based', icon: '🌱' };
+
+  return null;
+}
 
 /**
  * Strips leading HelloFresh upsell bracket text such as

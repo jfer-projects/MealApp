@@ -37,6 +37,7 @@ import { findBlendDefinition } from '../utils/blendDecoder';
 import { formatAmount, transformIngredient } from '../utils/dairyEngine';
 import { formatWeekRange } from '../utils/dateUtils';
 import { estimateRecipeNutrition } from '../utils/nutritionCostEngine';
+import { getRecipeProteinBadge } from '../utils/catalogCache';
 import {
   buildPantryContext,
   COMMON_FRIDGE_STAPLES,
@@ -868,6 +869,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
           {visibleRecipes.slice(0, visibleLimit).map((recipe, cardIdx) => {
             const matchInfo = matchMap.get(recipe.id);
+            const proteinBadge = getRecipeProteinBadge(recipe);
             const rEntry =
               ratingsMap[recipe.original_id || recipe.id] || ratingsMap[recipe.id];
 
@@ -888,7 +890,7 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                       loading={cardIdx < 8 ? 'eager' : 'lazy'}
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+                    <div className="absolute top-2 left-2 flex flex-wrap gap-1 max-w-[80%]">
                       {recipe.version > 1 && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-600 text-white shadow-xs flex items-center gap-0.5">
                           <Sparkles className="w-2.5 h-2.5" />
@@ -898,6 +900,12 @@ export const CatalogPlannerView: React.FC<CatalogPlannerViewProps> = ({
                       {matchInfo && matchInfo.matchPercentage > 0 && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white shadow-xs">
                           {matchInfo.matchPercentage}% On Hand
+                        </span>
+                      )}
+                      {proteinBadge && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-900/80 backdrop-blur-xs text-white shadow-xs flex items-center gap-1 border border-white/20">
+                          <span>{proteinBadge.icon}</span>
+                          <span>{proteinBadge.label}</span>
                         </span>
                       )}
                     </div>
